@@ -76,11 +76,11 @@ def verify_gate(ctx: ContextTypes.DEFAULT_TYPE, update: Update) -> bool:
     """Return True if the user is verified, else send the prompt and False."""
     if is_verified(ctx, update):
         return True
-    settings = settings(ctx)
+    cfg = settings(ctx)
     msg = (
         "🔒 This bot is private.\n"
         "Type the secret phrase to continue:\n"
-        f"<code>{settings.secret_phrase}</code>"
+        f"<code>{cfg.secret_phrase}</code>"
     )
     update.effective_message.reply_text(msg, parse_mode="HTML")
     # remember we've prompted so we don't nag on every command

@@ -108,6 +108,7 @@ async def start_bot(settings: Settings, vault: Vault, scheduler: ReminderSchedul
     log.info("Starting PTB long polling")
     await ptb_app.initialize()
     await ptb_app.start()
+    await ptb_app.updater.start_polling(drop_pending_updates=True)
     await post_init(ptb_app)
     return ptb_app
 
@@ -120,6 +121,8 @@ async def stop_bot(ptb_app, scheduler: ReminderScheduler) -> None:
     except Exception:  # noqa: BLE001
         pass
     try:
+        if ptb_app.updater.running:
+            await ptb_app.updater.stop()
         await ptb_app.stop()
         await ptb_app.shutdown()
     except Exception:  # noqa: BLE001
