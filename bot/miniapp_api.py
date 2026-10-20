@@ -314,8 +314,10 @@ async def update_reminder(rid: int, body: ReminderIn, user_id: int = Depends(_us
     gid = members[0].group_id if members[0].group_id is not None else rid
     # preserve the cached Telegram media file_id if the same attachment is kept
     old_media = members[0]
+    # If the edited reminder keeps the same image, don't let remove() delete it.
+    keep_image = bool(body.image_id and old_media.image_id == body.image_id)
     for m in members:
-        await STATE.sched.remove(m.id)
+        await STATE.sched.remove(m.id, keep_image=keep_image)
     schemas = _schedule_dicts(body)
     if not schemas:
         raise HTTPException(422, "no schedule provided")

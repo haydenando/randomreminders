@@ -355,14 +355,16 @@ class ReminderScheduler:
         self._reschedule_one(r, utcnow())
         await self.vault.save()
 
-    async def remove(self, rid: int) -> Reminder | None:
+    async def remove(self, rid: int, keep_image: bool = False) -> Reminder | None:
         r = self.vault.db.reminders.pop(rid, None)
         if r is not None:
             try:
                 self.sched.remove_job(self._job_id(rid))
             except Exception:  # noqa: BLE001
                 pass
-            if r.image_id:
+            # When editing a reminder (not deleting it) the same image may be
+            # kept, so don't delete it here.
+            if r.image_id and not keep_image:
                 try:
                     await self.vault.delete_image(r.image_id)
                 except Exception:  # noqa: BLE001

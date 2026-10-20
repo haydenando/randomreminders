@@ -37,17 +37,23 @@ log = logging.getLogger("skeddy")
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 
 
-async def _send_media_and_cache(bot: Bot, user_id: int, r, text: str, image_data: bytes) -> None:
+async def _send_media_and_cache(bot: Bot, user_id: int, r, text: str, image_data: bytes | None) -> None:
     """Send photo/document, capturing the Telegram file_id to reuse on later sends."""
     if r.media_type == "document":
         if r.main_file_id:
-            await bot.send_document(user_id, r.main_file_id, caption=text)
-            return
+            try:
+                await bot.send_document(user_id, r.main_file_id, caption=text)
+                return
+            except Exception:
+                log.warning("send_document via cached file_id failed; retrying with bytes")
         msg = await bot.send_document(user_id, image_data, filename=r.filename or "file", caption=text)
     else:
         if r.main_file_id:
-            await bot.send_photo(user_id, r.main_file_id, caption=text)
-            return
+            try:
+                await bot.send_photo(user_id, r.main_file_id, caption=text)
+                return
+            except Exception:
+                log.warning("send_photo via cached file_id failed; retrying with bytes")
         msg = await bot.send_photo(user_id, image_data, caption=text)
     # Capture the file_id so future sends reuse Telegram's cached file (~zero egress)
     try:

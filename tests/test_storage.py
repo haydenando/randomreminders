@@ -213,6 +213,25 @@ async def test_shrink_cleans_up_document():
     assert old_doc_msg_id not in fake.messages
 
 
+async def test_delete_image_respects_references():
+    fake = FakeVaultBot()
+    v = build_vault(fake)
+    await v.setup()
+    img = await v.put_image(b"IMGBYTES", "p.png", "photo")
+    assert img in v.db.image_refs
+    # A reminder referencing the image keeps it alive even on delete_image().
+    r = make_reminder(1, "t")
+    r.image_id = img
+    v.db.reminders[1] = r
+    await v.delete_image(img)
+    assert img in v.db.image_refs
+    # Once no reminder references it, delete_image drops it.
+    v.db.reminders.pop(1)
+    await v.delete_image(img)
+    assert img not in v.db.image_refs
+    assert img not in v.db.image_meta
+
+
 async def test_migrate_v1():
     fake = FakeVaultBot()
     db = DB()
@@ -246,6 +265,7 @@ async def run_all():
     await test_save_small_inline()
     await test_save_large_becomes_document()
     await test_shrink_cleans_up_document()
+    await test_delete_image_respects_references()
     await test_migrate_v1()
     print("ALL TESTS PASSED")
 
