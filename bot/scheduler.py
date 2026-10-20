@@ -122,6 +122,48 @@ def _next_in_range(
     return None
 
 
+def _next_every_ndays(r: Reminder, after: datetime) -> datetime | None:
+    """Next fire for 'every N days at HH:MM' (or 'at random [win]')."""
+    days = max(1, int(r.period_days or 1))
+    z = _tz(r.tz)
+    local_after = after.astimezone(z)
+    try:
+        anchor = datetime.fromisoformat(r.created_at or "").astimezone(z).date()
+    except Exception:  # noqa: BLE001
+        anchor = local_after.date()
+    # fire on days where (date - anchor).days % days == 0
+    for offset in range(0, days * 5 + 2):
+        d = local_after.date() + timedelta(days=offset)
+        if (d - anchor).days % days != 0:
+            continue
+        if r.random_time:
+            start_t = _parse_hhmm(r.window_start, time(0, 0))
+            end_t = _parse_hhmm(r.window_end, time(23, 59))
+            start_dt = datetime.combine(d, start_t, tzinfo=z)
+            end_dt = datetime.combine(d, end_t, tzinfo=z)
+            if end_dt <= start_dt:
+                end_dt = start_dt + timedelta(seconds=end_dt - start_dt or 3600)
+            secs = int((end_dt - start_dt).total_seconds())
+            cand = start_dt + timedelta(seconds=random.randint(0, max(secs, 0)))
+        else:
+            cand = datetime.combine(d, _parse_hhmm(r.time_of_day), tzinfo=z)
+        if cand > after:
+            return cand.astimezone(timezone.utc)
+    return None
+
+
+def _next_cron(r: Reminder, after: datetime) -> datetime | None:
+    """Next fire for a 5-field crontab expression."""
+    if not r.cron_expr:
+        return None
+    try:
+        from apscheduler.triggers.cron import CronTrigger
+        trig = CronTrigger.from_crontab(r.cron_expr.strip(), timezone=_tz(r.tz))
+        return trig.get_next_fire_time(None, after)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def compute_next_fire(r: Reminder, from_dt: datetime) -> datetime | None:
     """Compute the next fire time for a reminder, given the current time."""
     # Interval schedules run indefinitely and are never auto-completed
@@ -146,6 +188,10 @@ def compute_next_fire(r: Reminder, from_dt: datetime) -> datetime | None:
             hi = lo
         delay = random.uniform(lo, hi)
         return from_dt + timedelta(seconds=delay)
+    if r.schedule_type == "every_ndays":
+        return _next_every_ndays(r, from_dt)
+    if r.schedule_type == "cron":
+        return _next_cron(r, from_dt)
     if r.schedule_type == "weekdays":
         return _next_weekday(tod, r.tz, r.weekdays, from_dt)
     if r.schedule_type == "monthdays":

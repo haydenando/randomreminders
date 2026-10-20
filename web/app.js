@@ -1,4 +1,4 @@
-// Randomly Remind Me mini app
+// Flexible Reminder mini app
 const tg = window.Telegram?.WebApp;
 tg?.ready?.();
 tg?.expand?.();
@@ -35,9 +35,11 @@ function categoryFor(type) {
 }
 const COMPLEX_TYPES = [
   { id: "every_day", label: "Every day", desc: "At HH:MM every day" },
+  { id: "every_ndays", label: "Every N days", desc: "Every N days at a time or random window" },
   { id: "weekdays", label: "Days of week", desc: "At HH:MM on selected weekdays" },
   { id: "monthdays", label: "Days of month", desc: "At HH:MM on selected day numbers" },
   { id: "daterange", label: "Date range", desc: "At HH:MM every day in [start, end]" },
+  { id: "cron", label: "Cron", desc: "5-field crontab expression" },
 ];
 
 function $(sel) { return document.querySelector(sel); }
@@ -265,6 +267,8 @@ function pickSched(s) {
     min_seconds: s.min_seconds, max_seconds: s.max_seconds,
     weekdays: s.weekdays || [], monthdays: s.monthdays || [],
     range_start: s.range_start, range_end: s.range_end,
+    period_days: s.period_days, random_time: !!s.random_time,
+    window_start: s.window_start, window_end: s.window_end, cron_expr: s.cron_expr,
   };
 }
 
@@ -355,6 +359,12 @@ function scheduleDetailLabel(s) {
     return "Every " + fmtDur(secs);
   }
   if (type === "every_day") return "Every day at " + (s.time_of_day || "09:00");
+  if (type === "every_ndays") {
+    const label = "Every " + (s.period_days || 1) + "d";
+    if (s.random_time) return (s.window_start ? label + " at random " + s.window_start + "-" + s.window_end : label + " at random");
+    return label + " at " + (s.time_of_day || "09:00");
+  }
+  if (type === "cron") return "Cron " + (s.cron_expr || "");
   if (type === "weekdays") return (s.weekdays || []).map(i => WEEKDAY_PILLS[i]).join(", ") + " at " + (s.time_of_day || "09:00");
   if (type === "monthdays") return "Days " + (s.monthdays || []).join(", ") + " at " + (s.time_of_day || "09:00");
   if (type === "daterange") return `${s.range_start} \u2192 ${s.range_end} at ${s.time_of_day || "09:00"}`;
@@ -434,6 +444,21 @@ function complexSubfields(st, existing) {
     return `<div class="field"><label>Time</label><input id="se-tod" type="time" value="${tod}"/></div>
       <div class="row2"><div class="field"><label>Start date</label><input id="se-start" type="date" value="${existing?.range_start||""}"/></div><div class="field"><label>End date</label><input id="se-end" type="date" value="${existing?.range_end||""}"/></div></div>`;
   }
+  if (st === "every_ndays") {
+    return `<div class="row2"><div class="field"><label>Every (days)</label><input id="se-period" type="number" min="1" value="${existing?.period_days || 1}"/></div>
+        <div class="field"><label>At time</label><input id="se-tod" type="time" value="${tod}"/></div></div>
+      <div class="field"><label>Time mode</label><div class="seg" id="se-random">
+        <button class="${existing?.random_time ? "" : "active"}" data-r="0">Fixed</button>
+        <button class="${existing?.random_time ? "active" : ""}" data-r="1">Random</button>
+      </div></div>
+      <div class="row2" id="se-window-row" style="display:${existing?.random_time ? "" : "none"};">
+        <div class="field"><label>From</label><input id="se-ws" type="time" value="${existing?.window_start || ""}"/></div>
+        <div class="field"><label>To</label><input id="se-we" type="time" value="${existing?.window_end || ""}"/></div>
+      </div>`;
+  }
+  if (st === "cron") {
+    return `<div class="field"><label>Cron (minute hour day month weekday)</label><input id="se-cron" placeholder="0 9 * * *" value="${existing?.cron_expr || ""}"/></div>`;
+  }
   return `<div class="field"><label>Time</label><input id="se-tod" type="time" value="${tod}"/></div>`;
 }
 
@@ -445,6 +470,12 @@ function renderComplexSubfields(st, existing) {
   `;
   $("#se-complex-type").addEventListener("change", (e) => renderComplexSubfields(e.target.value, existing));
   bindComplexPills();
+  $all("#se-random button").forEach(b => b.addEventListener("click", () => {
+    $all("#se-random button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    const row = $("#se-window-row");
+    if (row) row.style.display = b.dataset.r === "1" ? "" : "none";
+  }));
 }
 
 function bindComplexPills() {
@@ -485,6 +516,12 @@ function readSchedEditor() {
   if (st === "weekdays") base.weekdays = [...$all("[data-weekday].active")].map(p => parseInt(p.dataset.weekday, 10));
   if (st === "monthdays") base.monthdays = [...$all("[data-monthday].active")].map(p => parseInt(p.dataset.monthday, 10));
   if (st === "daterange") { base.range_start = $("#se-start")?.value; base.range_end = $("#se-end")?.value; }
+  if (st === "every_ndays") {
+    base.period_days = parseInt($("#se-period")?.value || "1", 10) || 1;
+    base.random_time = !!document.querySelector("#se-random button.active")?.dataset.r === "1";
+    if (base.random_time) { base.window_start = $("#se-ws")?.value || null; base.window_end = $("#se-we")?.value || null; }
+  }
+  if (st === "cron") { base.cron_expr = $("#se-cron")?.value.trim(); }
   return base;
 }
 

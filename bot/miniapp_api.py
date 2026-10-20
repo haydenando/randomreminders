@@ -1,4 +1,4 @@
-"""FastAPI router for the Randomly Remind Me mini app.
+"""FastAPI router for the Flexible Reminder mini app.
 
 The mini app is a static HTML/JS page served at / that talks to these
 JSON endpoints. Authentication: the mini app is opened from inside the
@@ -53,7 +53,7 @@ def _user_id_from_query(user_id: int | None = Query(default=None)) -> int:
 # ---------------------------------------------------------------------------
 
 class ScheduleIn(BaseModel):
-    schedule_type: str = "once"  # once | interval | every_day | weekdays | monthdays | daterange
+    schedule_type: str = "once"  # once | interval | every_day | weekdays | monthdays | daterange | every_ndays | cron
     at: str | None = None
     time_of_day: str | None = None
     min_seconds: float | None = None
@@ -62,6 +62,11 @@ class ScheduleIn(BaseModel):
     monthdays: list[int] = Field(default_factory=list)
     range_start: str | None = None
     range_end: str | None = None
+    period_days: int | None = None
+    random_time: bool = False
+    window_start: str | None = None
+    window_end: str | None = None
+    cron_expr: str | None = None
 
 
 class ReminderIn(BaseModel):
@@ -91,6 +96,11 @@ class ReminderIn(BaseModel):
     monthdays: list[int] = Field(default_factory=list)
     range_start: str | None = None
     range_end: str | None = None
+    period_days: int | None = None
+    random_time: bool = False
+    window_start: str | None = None
+    window_end: str | None = None
+    cron_expr: str | None = None
 
 
 class UserSettingsIn(BaseModel):
@@ -183,6 +193,11 @@ def _schedule_dicts(body: ReminderIn) -> list[dict]:
         "monthdays": body.monthdays,
         "range_start": body.range_start,
         "range_end": body.range_end,
+        "period_days": body.period_days,
+        "random_time": body.random_time,
+        "window_start": body.window_start,
+        "window_end": body.window_end,
+        "cron_expr": body.cron_expr,
     }]
 
 
@@ -237,6 +252,11 @@ def _build_reminder(schema: dict, user_id: int, body: ReminderIn, gid: int) -> R
         target_date=body.target_date,
         notification_time=body.notification_time,
         countdown_days_before=body.countdown_days_before,
+        period_days=schema.get("period_days"),
+        random_time=bool(schema.get("random_time")),
+        window_start=schema.get("window_start"),
+        window_end=schema.get("window_end"),
+        cron_expr=schema.get("cron_expr"),
         group_id=gid,
     )
 

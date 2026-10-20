@@ -1,6 +1,6 @@
-# Randomly Remind Me - Reminder bot for Telegram
+# Flexible Reminder - Reminder bot for Telegram
 
-A personal Telegram reminder bot with a Randomly Remind Me mini app and a killer feature:
+A personal Telegram reminder bot with a Flexible Reminder mini app and a killer feature:
 **randomized interval reminders** ("tell me every 10-20 minutes").
 
 - No database. All state lives in a hidden Telegram message (the *vault*), so it
@@ -11,7 +11,7 @@ A personal Telegram reminder bot with a Randomly Remind Me mini app and a killer
 ## Features
 
 - **Secret-phrase gated**: public bot, but only works if you type the phrase
-  (`haydenando` by default). After that you get a Randomly Remind Me onboarding:
+  (`haydenando` by default). After that you get a Flexible Reminder onboarding:
   a choice between "Open Mini App" and "Set up in chat" (time zone).
 - **Randomized intervals**: `every 10-20m stretch` fires indefinitely every 10 to 20 minutes,
   re-rolling the random gap each time.
@@ -26,7 +26,7 @@ A personal Telegram reminder bot with a Randomly Remind Me mini app and a killer
   vault bot, so images survive restarts.
 - **Buttonless reminders**: reminders arrive as plain text (or photo + caption)
   with no inline buttons. Done / delete / snooze live in the mini app.
-- **Chat commands** + a **mini app** (Randomly Remind Me) for full editing.
+- **Chat commands** + a **mini app** (Flexible Reminder) for full editing.
 
 ## Commands
 
@@ -43,21 +43,27 @@ A personal Telegram reminder bot with a Randomly Remind Me mini app and a killer
 | `/miniapp` | open the app to create/manage reminders |
 | `/settings` | open settings (timezone, snooze) |
 
-## Time formats
+## Schedule formats
 
-- Durations: `45s`, `10m`, `2h`, `3d`
-- Randomized intervals: `10m-20m`, `1h-2h`, `30s-2m` (mixed units OK)
-- Clock times: `09:00`, `21:30`
-- Dates: `2026-10-20`
-- Weekdays: `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, `sun` (or ranges like `mon-fri`)
+- Durations: `45s`, `10m`, `2h`, `3d`, `2w`
+- Randomized intervals: `every 10-20m`
+- Every N days: `every 4d at 18:00`, `every 4d at random`, `every 4d at random 08:00-20:00`
+- Weekly: `every monday at 09:00`, `every weekday at 09:00`
+- Cron: `cron 0 9 * * *`
+- One-off: `in 2h`, `tomorrow at 09:00`, `2026-05-01 14:00`
+- Combine one-offs with `~`: `in 2h ~ tomorrow at 09:00`
 
 ## Chat syntax for quick creation
 
 ```
-every 10-20m stretch      # randomized interval
-every 90s water           # fixed interval
-every day 09:00 call mom    # daily at 9am
-mon-fri 12:00 lunch         # weekdays at noon
+every 10-20m stretch           # randomized interval
+every 30m water               # fixed interval
+every 4d at 18:00 stretch      # every 4 days at 6pm
+every 2 weeks at 09:00 report  # every 2 weeks at 9am
+every weekday at 09:00 standup # weekdays at 9am
+cron 0 9 * * * daily           # 5-field cron
+in 2h call mom                # once in 2h
+tomorrow at 09:00 dentist      # once tomorrow
 ```
 
 ## Setup (one-time)
@@ -65,7 +71,7 @@ mon-fri 12:00 lunch         # weekdays at noon
 ### 1. Create the main bot
 
 1. Message @BotFather on Telegram.
-2. Send `/newbot`, pick a username (e.g. `HaydenandoRandomly Remind MeBot`) and a name.
+2. Send `/newbot`, pick a username (e.g. `FlexibleReminderBot`) and a name.
 3. Copy the token — this is `BOT_TOKEN`.
 
 ### 2. Create the vault bot
@@ -73,7 +79,7 @@ mon-fri 12:00 lunch         # weekdays at noon
 The vault bot is a second bot that owns the hidden data message. It keeps your
 reminders alive across redeploys.
 
-1. In @BotFather, send `/newbot` again and create a second bot (e.g. `Randomly Remind MeVaultBot`).
+1. In @BotFather, send `/newbot` again and create a second bot (e.g. `FlexibleVaultBot`).
 2. Copy its token — this is `VAULT_TOKEN`.
 3. Start a chat with the vault bot (send it any message, e.g. `hi`).
 4. Get the chat id: open
@@ -130,7 +136,7 @@ bot/
   handlers.py      # chat command + callback handlers
   miniapp_api.py   # FastAPI router for the web app
 web/
-  index.html       # Randomly Remind Me mini app UI
+  index.html       # Flexible Reminder mini app UI
   app.js           # mini app logic
 requirements.txt
 .env.example

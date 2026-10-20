@@ -1,7 +1,7 @@
 """Telegram chat handlers.
 
 All commands go through the secret-phrase gate on first use. Once verified,
-the user gets a Randomly Remind Me onboarding (mini app button or chat setup with
+the user gets a Flexible Reminder onboarding (mini app button or chat setup with
 timezone), then creates reminders by just chatting.
 
 Reminders are delivered as plain text (or photo+caption) messages with NO
@@ -16,7 +16,7 @@ Commands:
   /help_reminder_types - difference between reminder and countdown
   /help_schedules      - what the schedule icons mean
   /cancel              - cancel the current inline action
-  /miniapp             - open the Randomly Remind Me mini app
+  /miniapp             - open the Flexible Reminder mini app
   /settings            - open settings (timezone, snooze)
 """
 from __future__ import annotations
@@ -138,6 +138,8 @@ def _schedule_icon(r: Reminder) -> str:
         "weekdays": "🗓️",
         "monthdays": "📆",
         "daterange": "🔁",
+        "every_ndays": "🔁",
+        "cron": "⏰",
     }.get(r.schedule_type, "❓")
 
 
@@ -160,7 +162,7 @@ def _miniapp_url() -> str | None:
 
 
 def _onboard_keyboard() -> InlineKeyboardMarkup:
-    """First onboarding screen: mini app button + chat setup (Randomly Remind Me)."""
+    """First onboarding screen: mini app button + chat setup (Flexible Reminder)."""
     url = _miniapp_url()
     rows = [[InlineKeyboardButton("💬 Set up in chat", callback_data="setup:chat")]]
     if url:
@@ -215,7 +217,7 @@ async def _finish_onboarding(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def _send_welcome(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Welcome screen for a verified user (Randomly Remind Me)."""
+    """Welcome screen for a verified user (Flexible Reminder)."""
     us = user_state(ctx, update)
     if not us.onboarded:
         await update.effective_message.reply_text(
@@ -294,7 +296,7 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not await verify_gate(ctx, update):
         return
     text = (
-        "Randomly Remind Me help\n\n"
+        "Flexible Reminder help\n\n"
         "Commands\n"
         "/start — main menu\n"
         "/list — your reminders\n"
@@ -317,23 +319,26 @@ async def cmd_formats(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not await verify_gate(ctx, update):
         return
     text = (
-        "Time formats\n\n"
-        "Durations (for intervals):\n"
-        "  45s  — 45 seconds\n"
-        "  10m  — 10 minutes\n"
-        "  2h   — 2 hours\n"
-        "  3d   — 3 days\n\n"
-        "Randomized intervals (the main feature):\n"
-        "  10m-20m   — fire every 10 to 20 minutes, random\n"
-        "  1h-2h     — fire every 1 to 2 hours, random\n"
-        "  30s-2m    — mixed units are fine\n\n"
-        "Clock times (for 'every day', 'weekdays', 'monthdays', 'date range'):\n"
-        "  09:00     — 9am in your timezone\n"
-        "  21:30     — 9:30pm\n\n"
-        "Dates (for 'date range'):\n"
-        "  2026-10-20 — ISO date\n\n"
-        "Weekdays: Mon, Tue, Wed, Thu, Fri, Sat, Sun\n"
-        "Days of month: 1..31"
+        "Schedule formats\n\n"
+        "Intervals:\n"
+        "  every 30m        — every 30 minutes\n"
+        "  every 10-20m     — every 10 to 20 minutes (random)\n\n"
+        "Every N days:\n"
+        "  every 4d at 18:00                  — every 4 days at 6pm\n"
+        "  every 4d at random                 — every 4 days, any time\n"
+        "  every 4d at random 08:00-20:00     — every 4 days, random 8am-8pm\n"
+        "  every 2 weeks at 09:00             — every 2 weeks at 9am\n\n"
+        "Weekly / monthly:\n"
+        "  every monday at 09:00\n"
+        "  every weekday at 09:00\n"
+        "  every day at 09:00\n\n"
+        "Cron:\n"
+        "  cron 0 9 * * *     — 5-field crontab\n\n"
+        "One-off:\n"
+        "  in 2h            — in 2 hours\n"
+        "  tomorrow at 09:00\n"
+        "  2026-05-01 14:00\n"
+        "Separate several one-offs with · (e.g. \"in 2h · tomorrow at 09:00\")\n"
     )
     await update.effective_message.reply_text(text)
 
@@ -396,11 +401,11 @@ async def cmd_miniapp(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     kb = InlineKeyboardMarkup(
         [[InlineKeyboardButton("🚀 Open Mini App", web_app=WebAppInfo(url=app_url))]]
     )
-    await update.effective_message.reply_text("Opening Randomly Remind Me mini app:", reply_markup=kb)
+    await update.effective_message.reply_text("Opening Flexible Reminder mini app:", reply_markup=kb)
 
 
 async def cmd_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """/settings — open the settings (Randomly Remind Me panel)."""
+    """/settings — open the settings (Flexible Reminder panel)."""
     if not await verify_gate(ctx, update):
         return
     us = user_state(ctx, update)
@@ -538,15 +543,23 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     # 3. natural-language-ish reminder creation
-    parsed = _try_parse_create(text)
-    if parsed is not None:
-        r = parsed
-        r.id = vault(ctx).db.next_id()
-        r.user_id = update.effective_user.id
-        r.tz = us.timezone or settings(ctx).default_tz
-        await sched(ctx).add(r)
+    tz_name = us.timezone or settings(ctx).default_tz
+    parsed = _try_parse_create(text, tz_name)
+    if parsed:
+        gid = vault(ctx).db.next_id()
+        created = []
+        for r in parsed:
+            r.id = vault(ctx).db.next_id()
+            r.user_id = update.effective_user.id
+            r.tz = tz_name
+            r.group_id = gid
+            await sched(ctx).add(r)
+            created.append(r)
+        first = created[0]
+        n = len(created)
         await msg.reply_text(
-            f"✅ Created #{r.id}: {_render_reminder_line(r, r.tz)}\n"
+            f"✅ Created #{first.id}" + (f" (+{n-1} schedule(s))" if n > 1 else "") +
+            f": {_render_reminder_line(first, first.tz)}\n"
             "Manage it in the mini app."
         )
         return
@@ -566,90 +579,241 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 # ---------------------------------------------------------------------------
 
 import re
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
-_DURATION_RE = re.compile(r"^\s*(\d+)\s*([smhd])\s*$", re.IGNORECASE)
-# Two forms: "10m-20m" (independent units) and "10-20m" (shared unit)
+_DURATION_RE = re.compile(r"^\s*(\d+)\s*([a-z]+)\s*$", re.IGNORECASE)
 _RANGE_RE = re.compile(
     r"^\s*(\d+)\s*([smhd])?\s*-\s*(\d+)\s*([smhd])\s*$", re.IGNORECASE
 )
+_RANGE_RE2 = re.compile(
+    r"^(\d+)\s*([smhd]?)\s*-\s*(\d+)\s*([smhd])\s*(.*)$", re.IGNORECASE
+)
 _TIME_RE = re.compile(r"^\s*(\d{1,2}):([0-5]\d)\s*$")
-_WEEKDAY_NAMES = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
+_WEEKDAY_NAMES = {
+    "mon": 0, "monday": 0, "tue": 1, "tues": 1, "tuesday": 1,
+    "wed": 2, "wednesday": 2, "thu": 3, "thur": 3, "thurs": 3, "thursday": 3,
+    "fri": 4, "friday": 4, "sat": 5, "saturday": 5, "sun": 6, "sunday": 6,
+}
+_WEEKDAY_GROUPS = {"weekday": [0, 1, 2, 3, 4], "weekdays": [0, 1, 2, 3, 4], "weekend": [5, 6]}
+
+_UNIT_SECONDS = {
+    "s": 1, "sec": 1, "secs": 1, "second": 1, "seconds": 1,
+    "m": 60, "min": 60, "mins": 60, "minute": 60, "minutes": 60,
+    "h": 3600, "hr": 3600, "hrs": 3600, "hour": 3600, "hours": 3600,
+    "d": 86400, "day": 86400, "days": 86400,
+    "w": 604800, "week": 604800, "weeks": 604800,
+}
 
 
 def _dur_to_seconds(n: int, unit: str) -> float:
     unit = unit.lower()
-    return n * {"s": 1, "m": 60, "h": 3600, "d": 86400}[unit]
+    return n * _UNIT_SECONDS.get(unit, 86400)
 
 
-def _try_parse_create(text: str) -> Reminder | None:
-    """Parse a free-form message into a Reminder (without id/user_id)."""
-    tokens = text.split()
-    if not tokens:
+def _norm_time(s: str | None) -> str | None:
+    if not s:
         return None
-    head = tokens[0].lower()
+    m = _TIME_RE.match(s)
+    if m:
+        return f"{int(m.group(1)):02d}:{m.group(2)}"
+    return None
 
-    if head == "every":
-        if len(tokens) < 2:
-            return None
-        second = tokens[1]
-        m = _RANGE_RE.match(second)
-        if m:
-            lo = _dur_to_seconds(int(m.group(1)), m.group(2) or m.group(4))
-            hi = _dur_to_seconds(int(m.group(3)), m.group(4))
-            note = " ".join(tokens[2:]) or None
-            return Reminder(
-                id=0, user_id=0,
-                text=note or f"every {second}",
-                kind="reminder", schedule_type="interval",
-                min_seconds=lo, max_seconds=hi, tz="UTC",
-            )
-        m = _DURATION_RE.match(second)
-        if m:
-            secs = _dur_to_seconds(int(m.group(1)), m.group(2))
-            note = " ".join(tokens[2:]) or None
-            return Reminder(
-                id=0, user_id=0, text=note or f"every {second}",
-                kind="reminder", schedule_type="interval",
-                min_seconds=secs, max_seconds=secs, tz="UTC",
-            )
-        if second in ("day", "daily"):
-            tod, note = "09:00", None
-            if len(tokens) > 2:
-                m = _TIME_RE.match(tokens[2])
-                if m:
-                    tod = f"{m.group(1).zfill(2)}:{m.group(2)}"
-                    note = " ".join(tokens[3:]) or None
-            return Reminder(
-                id=0, user_id=0, text=note or "every day",
-                kind="reminder", schedule_type="every_day",
-                time_of_day=tod, tz="UTC",
-            )
+
+def _parse_dur(s: str) -> float | None:
+    s = s.strip().lower()
+    m = re.match(r"^(\d+)\s*([a-z]+)$", s)
+    if not m:
         return None
+    mult = _UNIT_SECONDS.get(m.group(2))
+    return None if mult is None else int(m.group(1)) * mult
 
-    if head in _WEEKDAY_NAMES or re.match(r"^[a-z]+-[a-z]+$", head):
-        m = re.match(r"^([a-z]+)-([a-z]+)$", head)
-        if m:
-            a, b = m.group(1).lower(), m.group(2).lower()
-            if a not in _WEEKDAY_NAMES or b not in _WEEKDAY_NAMES:
-                return None
-            lo_i, hi_i = _WEEKDAY_NAMES[a], _WEEKDAY_NAMES[b]
-            if lo_i > hi_i:
-                lo_i, hi_i = hi_i, lo_i
-            weekdays = list(range(lo_i, hi_i + 1))
+
+def _local_to_utc(dt: datetime, tz_name: str) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZoneInfo(tz_name or "UTC"))
+    return dt.astimezone(timezone.utc).isoformat()
+
+
+def _extract_at(rem: str, default_tod: str) -> tuple[str, str | None]:
+    rem = rem.strip()
+    m = re.match(r"^at\s+(\d{1,2}):([0-5]\d)\s*(.*)$", rem, re.I)
+    if m:
+        return f"{int(m.group(1)):02d}:{m.group(2)}", (m.group(3).strip() or None)
+    parts = rem.split()
+    if parts and _TIME_RE.match(parts[0]):
+        h, minute = parts[0].split(":")
+        return f"{int(h):02d}:{minute}", (" ".join(parts[1:]).strip() or None)
+    return default_tod, (rem or None)
+
+
+def _mk(text: str, tz: str, **kw) -> Reminder:
+    return Reminder(id=0, user_id=0, text=text, kind="reminder", tz=tz, **kw)
+
+
+def _parse_every(rest: str, tz: str) -> Reminder | None:
+    low = rest.strip().lower()
+    if not low:
+        return None
+    rm2 = _RANGE_RE2.match(low)
+    if rm2:
+        lo = _dur_to_seconds(int(rm2.group(1)), rm2.group(2) or rm2.group(4))
+        hi = _dur_to_seconds(int(rm2.group(3)), rm2.group(4))
+        note = rm2.group(5).strip() or f"every {rm2.group(1)}-{rm2.group(3)}{rm2.group(4)}"
+        return _mk(note, tz, schedule_type="interval", min_seconds=lo, max_seconds=hi)
+    wm = re.match(r"^([a-z]+(?:-[a-z]+)?)\s*(.*)$", low)
+    if wm:
+        first = wm.group(1)
+        rem = wm.group(2).strip()
+        weekdays = None
+        if first in _WEEKDAY_GROUPS:
+            weekdays = _WEEKDAY_GROUPS[first]
+        elif first in _WEEKDAY_NAMES:
+            weekdays = [_WEEKDAY_NAMES[first]]
+        elif "-" in first:
+            a, b = first.split("-")
+            if a in _WEEKDAY_NAMES and b in _WEEKDAY_NAMES:
+                lo_i, hi_i = _WEEKDAY_NAMES[a], _WEEKDAY_NAMES[b]
+                if lo_i > hi_i:
+                    lo_i, hi_i = hi_i, lo_i
+                weekdays = list(range(lo_i, hi_i + 1))
+        if weekdays is not None:
+            tod, note = _extract_at(rem, "09:00")
+            return _mk(note or f"every {first}", tz, schedule_type="weekdays",
+                       time_of_day=tod, weekdays=weekdays)
+        if first in ("day", "daily"):
+            tod, note = _extract_at(rem, "09:00")
+            return _mk(note or "every day", tz, schedule_type="every_day",
+                       time_of_day=tod)
+    dm = re.match(r"^(\d+)\s*([a-z]+)\s*(.*)$", low)
+    if dm:
+        n = int(dm.group(1))
+        unit = dm.group(2).lower()
+        rem = dm.group(3).strip()
+        if unit in ("w", "week", "weeks"):
+            period_days = n * 7
+        elif unit in ("d", "day", "days"):
+            period_days = n
         else:
-            weekdays = [_WEEKDAY_NAMES[head]]
-        tod, note = "09:00", None
-        if len(tokens) > 1:
-            m = _TIME_RE.match(tokens[1])
-            if m:
-                tod = f"{m.group(1).zfill(2)}:{m.group(2)}"
-                note = " ".join(tokens[2:]) or None
-        return Reminder(
-            id=0, user_id=0, text=note or f"weekdays {head}",
-            kind="reminder", schedule_type="weekdays",
-            time_of_day=tod, weekdays=weekdays, tz="UTC",
-        )
+            secs = n * _UNIT_SECONDS.get(unit, 60)
+            note = rem or f"every {n}{unit}"
+            return _mk(note, tz, schedule_type="interval",
+                       min_seconds=secs, max_seconds=secs)
+        return _every_ndays(n, unit, period_days, rem, tz)
+    return None
 
+
+def _every_ndays(n: int, unit: str, period_days: int, rem: str, tz: str) -> Reminder:
+    label = f"every {n}{unit}"
+    rm = re.match(r"^at\s+random\s*(.*)$", rem, re.I)
+    if rm:
+        rest = rm.group(1).strip()
+        win = re.match(r"^(\d{1,2}:\d{2})-(\d{1,2}:\d{2})\s*(.*)$", rest)
+        ws = we = None
+        note = None
+        if win:
+            ws = _norm_time(win.group(1))
+            we = _norm_time(win.group(2))
+            note = win.group(3).strip() or None
+            label = f"every {n}{unit} at random {ws}-{we}"
+        else:
+            note = rest or None
+        return _mk(note or label, tz, schedule_type="every_ndays",
+                   period_days=period_days, random_time=True,
+                   window_start=ws, window_end=we)
+    tm = re.match(r"^at\s+(\d{1,2}):([0-5]\d)\s*(.*)$", rem, re.I)
+    if tm:
+        tod = f"{int(tm.group(1)):02d}:{tm.group(2)}"
+        note = tm.group(3).strip() or None
+        return _mk(note or f"every {n}{unit} at {tod}", tz,
+                   schedule_type="every_ndays", period_days=period_days, time_of_day=tod)
+    note = rem or f"every {n}{unit}"
+    secs = period_days * 86400
+    return _mk(note, tz, schedule_type="interval", min_seconds=secs, max_seconds=secs)
+
+
+def _parse_once(s: str, tz: str) -> Reminder | None:
+    m = re.match(r"^in\s+(.+)$", s, re.I)
+    if m:
+        after = m.group(1).strip()
+        dm = re.match(r"^(\d+\s*[a-z]+)\s*(.*)$", after, re.I)
+        dur = after if not dm else dm.group(1).strip()
+        note = "" if not dm else dm.group(2).strip()
+        secs = _parse_dur(dur)
+        if secs is None:
+            return None
+        at = (utcnow() + timedelta(seconds=secs)).isoformat()
+        return _mk(note or f"in {dur}", tz, schedule_type="once", at=at)
+    m = re.match(r"^tomorrow\s+(?:at\s+)?(\d{1,2}):([0-5]\d)\s*(.*)$", s, re.I)
+    if m:
+        note = m.group(3).strip() or "tomorrow"
+        now_local = utcnow().astimezone(ZoneInfo(tz or "UTC"))
+        dt = (now_local + timedelta(days=1)).replace(
+            hour=int(m.group(1)), minute=int(m.group(2)), second=0, microsecond=0)
+        return _mk(note, tz, schedule_type="once", at=_local_to_utc(dt, tz))
+    m = re.match(r"^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):([0-5]\d)\s*(.*)$", s)
+    if m:
+        note = m.group(4).strip() or "scheduled"
+        dt = datetime(int(m.group(1)[:4]), int(m.group(1)[5:7]), int(m.group(1)[8:10]),
+                      int(m.group(2)), int(m.group(3)))
+        return _mk(note, tz, schedule_type="once", at=_local_to_utc(dt, tz))
+    m = re.match(r"^(\d{4}-\d{2}-\d{2})\s*(.*)$", s)
+    if m:
+        note = m.group(2).strip() or "scheduled"
+        return _mk(note, tz, schedule_type="once",
+                   at=_local_to_utc(datetime.fromisoformat(m.group(1)), tz))
+    return None
+
+
+def _parse_one(spec: str, tz: str) -> Reminder | None:
+    s = spec.strip()
+    low = s.lower()
+    m = re.match(r"^cron\s+(\S+\s+\S+\s+\S+\s+\S+\s+\S+)\s*(.*)$", s, re.I)
+    if m:
+        expr = " ".join(m.group(1).split())
+        note = m.group(2).strip() or f"cron {expr}"
+        if len(expr.split()) == 5:
+            return _mk(note, tz, schedule_type="cron", cron_expr=expr)
+    if low.startswith("every"):
+        r = _parse_every(s[len("every"):].strip(), tz)
+        if r is not None:
+            return r
+    r = _parse_once(s, tz)
+    if r is not None:
+        return r
+    wm = re.match(r"^([a-z]+(?:-[a-z]+)?)\s+(?:at\s+)?(\d{1,2}):([0-5]\d)\s*(.*)$", low)
+    if wm:
+        first = wm.group(1)
+        if first in _WEEKDAY_NAMES or "-" in first:
+            if "-" in first:
+                a, b = first.split("-")
+                if a in _WEEKDAY_NAMES and b in _WEEKDAY_NAMES:
+                    lo_i, hi_i = _WEEKDAY_NAMES[a], _WEEKDAY_NAMES[b]
+                    if lo_i > hi_i:
+                        lo_i, hi_i = hi_i, lo_i
+                    weekdays = list(range(lo_i, hi_i + 1))
+                else:
+                    return None
+            else:
+                weekdays = [_WEEKDAY_NAMES[first]]
+            tod = f"{int(wm.group(2)):02d}:{wm.group(3)}"
+            note = wm.group(4).strip() or f"weekdays {first}"
+            return _mk(note, tz, schedule_type="weekdays", time_of_day=tod, weekdays=weekdays)
+    return None
+
+
+def _try_parse_create(text: str, tz_name: str = "UTC") -> list[Reminder]:
+    """Parse a free-form message into a list of Reminder specs."""
+    parsed: list[Reminder] = []
+    for part in re.split(r"\s*[·|]\s*", text):
+        part = part.strip()
+        if not part:
+            continue
+        r = _parse_one(part, tz_name)
+        if r is not None:
+            r.tz = tz_name
+            parsed.append(r)
+    return parsed
     return None
 
 

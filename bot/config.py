@@ -108,6 +108,13 @@ class Reminder:
     target_date: str | None = None        # "YYYY-MM-DD"
     notification_time: str | None = None  # "HH:MM"
     countdown_days_before: int | None = None
+    # every_ndays schedule params (e.g. "every 4d at 18:00")
+    period_days: int | None = None        # period in days
+    random_time: bool = False             # "at random" -> pick a time within window
+    window_start: str | None = None       # "HH:MM" (random window start)
+    window_end: str | None = None         # "HH:MM" (random window end)
+    # cron schedule param (5-field crontab string)
+    cron_expr: str | None = None
     # group schedules that belong to the same logical reminder
     group_id: int | None = None
 
