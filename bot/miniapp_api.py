@@ -313,6 +313,8 @@ async def update_reminder(rid: int, body: ReminderIn, user_id: int = Depends(_us
     if not members or members[0].user_id != user_id:
         raise HTTPException(404, "not found")
     gid = members[0].group_id if members[0].group_id is not None else rid
+    # preserve the cached Telegram media file_id if the same attachment is kept
+    old_media = members[0]
     for m in members:
         await STATE.sched.remove(m.id)
     schemas = _schedule_dicts(body)
@@ -321,6 +323,10 @@ async def update_reminder(rid: int, body: ReminderIn, user_id: int = Depends(_us
     created = []
     for s in schemas:
         r = _build_reminder(s, user_id, body, gid)
+        if body.image_id and old_media.image_id == body.image_id and old_media.main_file_id:
+            r.main_file_id = old_media.main_file_id
+            r.media_type = old_media.media_type
+            r.filename = old_media.filename
         await STATE.sched.add(r)
         created.append(r)
     primary = created[0]

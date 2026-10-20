@@ -99,6 +99,9 @@ class Reminder:
     media_type: str = "photo"
     # original filename of the attachment (for documents)
     filename: str | None = None
+    # Telegram file_id of the media, captured after the first successful send,
+    # so subsequent sends reuse Telegram's cached file (~zero egress)
+    main_file_id: str | None = None
     # customizable message template. Placeholders:
     #   {text}  - the reminder text
     #   {id}    - reminder id

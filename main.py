@@ -37,8 +37,31 @@ log = logging.getLogger("skeddy")
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 
 
+async def _send_media_and_cache(bot: Bot, user_id: int, r, text: str, image_data: bytes) -> None:
+    """Send photo/document, capturing the Telegram file_id to reuse on later sends."""
+    if r.media_type == "document":
+        if r.main_file_id:
+            await bot.send_document(user_id, r.main_file_id, caption=text)
+            return
+        msg = await bot.send_document(user_id, image_data, filename=r.filename or "file", caption=text)
+    else:
+        if r.main_file_id:
+            await bot.send_photo(user_id, r.main_file_id, caption=text)
+            return
+        msg = await bot.send_photo(user_id, image_data, caption=text)
+    # Capture the file_id so future sends reuse Telegram's cached file (~zero egress)
+    try:
+        if r.media_type == "document":
+            r.main_file_id = msg.document.file_id
+        else:
+            r.main_file_id = msg.photo[-1].file_id
+        await STATE.vault.save()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 async def send_reminder(user_id: int, r) -> None:
-    """Send the reminder message (and optional image) to the user."""
+    """Send the reminder message (and optional media) to the user."""
     from bot.handlers import _fmt_next
 
     app = STATE.ptb_app
@@ -57,33 +80,43 @@ async def send_reminder(user_id: int, r) -> None:
             text = f"⏳ Countdown #{r.id}: {r.text}\nNext: {local_next}"
         else:
             text = f"Reminder #{r.id}: {r.text}\nNext: {local_next}"
-        # no reply_markup: reminders are plain text/photo messages, no buttons
         image_data = await STATE.vault.get_image(r.image_id)
         if image_data is None and r.image_file_id:
-            # legacy reminders created before image uploads used raw file_ids
+            # legacy reminders that already hold a Telegram file_id
             await bot.send_photo(user_id, r.image_file_id, caption=text)
         elif image_data is not None:
-            if r.media_type == "document":
-                await bot.send_document(user_id, image_data, filename=r.filename or "file", caption=text)
+            await _send_media_and_cache(bot, user_id, r, text, image_data)
+        else:
+            await bot.send_message(user_id, text)
+    except Exception:  # noqa: BLE001
+        log.exception("Failed to send reminder #%s to user %s", r.id, user_id)
+        # best-effort fallback
+        try:
+            local_next = _fmt_next(r, tzname) if r.next_fire else ""
+            if r.message_template:
+                text = r.message_template.format(text=r.text, id=r.id, next=local_next)
+            elif r.kind == "countdown":
+                text = f"⏳ Countdown #{r.id}: {r.text}\nNext: {local_next}"
             else:
-                await bot.send_photo(user_id, image_data, caption=text)
-        else:
-            await bot.send_message(user_id, text)
-    except Exception:  # noqa: BLE001
-        log.exception("Failed to send reminder #%s to user %s", r.id, user_id)
-        local_next = _fmt_next(r, tzname) if r.next_fire else ""
-        if r.message_template:
-            text = r.message_template.format(text=r.text, id=r.id, next=local_next)
-        elif r.kind == "countdown":
-            text = f"⏳ Countdown #{r.id}: {r.text}\nNext: {local_next}"
-        else:
-            text = f"Reminder #{r.id}: {r.text}\nNext: {local_next}"
-        if r.image_file_id:
-            await bot.send_photo(user_id, r.image_file_id, caption=text)
-        else:
-            await bot.send_message(user_id, text)
-    except Exception:  # noqa: BLE001
-        log.exception("Failed to send reminder #%s to user %s", r.id, user_id)
+                text = f"Reminder #{r.id}: {r.text}\nNext: {local_next}"
+            if r.image_file_id:
+                await bot.send_photo(user_id, r.image_file_id, caption=text)
+            elif r.main_file_id and r.media_type == "document":
+                await bot.send_document(user_id, r.main_file_id, caption=text)
+            elif r.main_file_id:
+                await bot.send_photo(user_id, r.main_file_id, caption=text)
+            elif r.image_id:
+                image_data = await STATE.vault.get_image(r.image_id)
+                if image_data and r.media_type == "document":
+                    await bot.send_document(user_id, image_data, filename=r.filename or "file", caption=text)
+                elif image_data:
+                    await bot.send_photo(user_id, image_data, caption=text)
+                else:
+                    await bot.send_message(user_id, text)
+            else:
+                await bot.send_message(user_id, text)
+        except Exception:  # noqa: BLE001
+            log.exception("Failed to send reminder #%s (fallback)", r.id)
 
 
 def build_fastapi() -> FastAPI:

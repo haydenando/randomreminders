@@ -24,6 +24,8 @@ A personal Telegram reminder bot with a Flexible Reminder mini app and a killer 
 - **Optional attachment** (any file type, up to 20 MB) per reminder, uploaded from the mini
   app. Bytes are backed up in the vault chat by the vault bot, so they survive
   restarts. Images are sent as photos, all other files as documents with a caption.
+  After the first send, the bot reuses Telegram's cached `file_id` so repeated
+  reminders use almost no outbound bandwidth.
 - **Reminder text limits**: 4096 characters for text-only reminders, 1024 characters
   when an attachment is attached.
 - **Buttonless reminders**: reminders arrive as plain text (or media + caption)
