@@ -55,6 +55,8 @@ def _user_id_from_query(user_id: int | None = Query(default=None)) -> int:
 class ScheduleIn(BaseModel):
     schedule_type: str = "once"  # once | interval | every_day | weekdays | monthdays | daterange | every_ndays | cron
     at: str | None = None
+    at_min: str | None = None
+    at_max: str | None = None
     time_of_day: str | None = None
     min_seconds: float | None = None
     max_seconds: float | None = None
@@ -89,6 +91,8 @@ class ReminderIn(BaseModel):
     # backward-compatible single-schedule fields
     schedule_type: str | None = None
     at: str | None = None
+    at_min: str | None = None
+    at_max: str | None = None
     time_of_day: str | None = None
     min_seconds: float | None = None
     max_seconds: float | None = None
@@ -186,6 +190,8 @@ def _schedule_dicts(body: ReminderIn) -> list[dict]:
     return [{
         "schedule_type": body.schedule_type or "interval",
         "at": body.at,
+        "at_min": body.at_min,
+        "at_max": body.at_max,
         "time_of_day": body.time_of_day,
         "min_seconds": body.min_seconds,
         "max_seconds": body.max_seconds,
@@ -236,6 +242,8 @@ def _build_reminder(schema: dict, user_id: int, body: ReminderIn, gid: int) -> R
         kind=body.kind,
         schedule_type=schema.get("schedule_type", "interval"),
         at=schema.get("at"),
+        at_min=schema.get("at_min"),
+        at_max=schema.get("at_max"),
         time_of_day=schema.get("time_of_day"),
         min_seconds=schema.get("min_seconds"),
         max_seconds=schema.get("max_seconds"),

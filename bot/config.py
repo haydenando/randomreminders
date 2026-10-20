@@ -115,6 +115,9 @@ class Reminder:
     window_end: str | None = None         # "HH:MM" (random window end)
     # cron schedule param (5-field crontab string)
     cron_expr: str | None = None
+    # one-time random range (ISO datetimes); schedule fires at a random point in [at_min, at_max]
+    at_min: str | None = None
+    at_max: str | None = None
     # group schedules that belong to the same logical reminder
     group_id: int | None = None
 

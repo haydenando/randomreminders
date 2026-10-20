@@ -183,6 +183,25 @@ def compute_next_fire(r: Reminder, from_dt: datetime) -> datetime | None:
             if cand.tzinfo is None:
                 cand = cand.replace(tzinfo=timezone.utc)
             return cand if cand > from_dt else None
+        if r.at_min and r.at_max:
+            # random one-time in [at_min, at_max], not before now
+            try:
+                lo = datetime.fromisoformat(r.at_min)
+                hi = datetime.fromisoformat(r.at_max)
+                if lo.tzinfo is None:
+                    lo = lo.replace(tzinfo=timezone.utc)
+                if hi.tzinfo is None:
+                    hi = hi.replace(tzinfo=timezone.utc)
+                if hi <= from_dt:
+                    return None
+                if lo < from_dt:
+                    lo = from_dt
+                secs = int((hi - lo).total_seconds())
+                cand = lo + timedelta(seconds=random.randint(0, max(secs, 0)))
+                r.at = cand.isoformat()
+                return cand
+            except Exception:  # noqa: BLE001
+                return None
         return None
     if r.schedule_type == "every_day":
         return _next_daily(tod, r.tz, from_dt, r)

@@ -90,6 +90,12 @@ function fmtDur(s) {
   return Math.round(s/86400) + "d";
 }
 
+function fmtDT(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}
+
 // ---------------------------------------------------------------------------
 // View switching
 // ---------------------------------------------------------------------------
@@ -263,7 +269,7 @@ function openEdit(r) {
 
 function pickSched(s) {
   return {
-    schedule_type: s.schedule_type, at: s.at, time_of_day: s.time_of_day,
+    schedule_type: s.schedule_type, at: s.at, at_min: s.at_min, at_max: s.at_max, time_of_day: s.time_of_day,
     min_seconds: s.min_seconds, max_seconds: s.max_seconds,
     weekdays: s.weekdays || [], monthdays: s.monthdays || [],
     range_start: s.range_start, range_end: s.range_end,
@@ -351,12 +357,16 @@ function renderScheduleList() {
 function scheduleDetailLabel(s) {
   const type = s.schedule_type;
   if (type === "once") {
+    if (s.at_min && s.at_max) {
+      return "One time (random): " + fmtDT(s.at_min) + " – " + fmtDT(s.at_max);
+    }
     if (!s.at) return "One time";
     return "One time: " + new Date(s.at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
   }
   if (type === "interval") {
-    const secs = s.min_seconds ?? s.max_seconds;
-    return "Every " + fmtDur(secs);
+    const lo = s.min_seconds ?? 0, hi = s.max_seconds ?? lo;
+    if (lo === hi) return "Every " + fmtDur(lo);
+    return "Every " + fmtDur(lo) + " – " + fmtDur(hi) + " (random)";
   }
   if (type === "every_day") return "Every day at " + (s.time_of_day || "09:00");
   if (type === "every_ndays") {
@@ -404,16 +414,39 @@ function openScheduleEditor(existing, category) {
 function renderSchedEditor(existing) {
   const fields = $("#sched-editor-fields");
   if (editorType === "once") {
+    const at = existing?.at ? localDT(existing.at) : "";
+    const rnd = !!(existing?.at_min && existing?.at_max);
+    const atMin = existing?.at_min ? localDT(existing.at_min) : "";
+    const atMax = existing?.at_max ? localDT(existing.at_max) : "";
     fields.innerHTML = `
-      <div class="field"><label>Date & time</label><input id="se-at" type="datetime-local" value="${existing && existing.at ? localDT(existing.at) : ""}"/></div>
-    `;
+      <div class="field"><label>Time mode</label><div class="seg" id="se-random">
+        <button class="${rnd ? "" : "active"}" data-r="0">Fixed</button>
+        <button class="${rnd ? "active" : ""}" data-r="1">Random range</button>
+      </div></div>
+      <div class="field" id="se-fixed-row" style="display:${rnd ? "none" : ""}"><label>Date &amp; time</label><input id="se-at" type="datetime-local" value="${at}"/></div>
+      <div class="row2" id="se-window-row" style="display:${rnd ? "" : "none"};">
+        <div class="field"><label>From</label><input id="se-at-min" type="datetime-local" value="${atMin}"/></div>
+        <div class="field"><label>To</label><input id="se-at-max" type="datetime-local" value="${atMax}"/></div>
+      </div>`;
+    bindTimeMode();
   } else if (editorType === "interval") {
-    let secs = existing && (existing.min_seconds ?? existing.max_seconds) ? (existing.min_seconds ?? existing.max_seconds) : 3600;
-    const { n, unit } = secsToNUnit(secs);
+    const isRnd = !!(existing && existing.min_seconds != null && existing.max_seconds != null && existing.min_seconds !== existing.max_seconds);
+    const lo = existing?.min_seconds != null ? existing.min_seconds : 3600;
+    const hi = existing?.max_seconds != null ? existing.max_seconds : lo;
+    const { n: loN, unit } = secsToNUnit(lo);
+    const { n: hiN } = secsToNUnit(hi);
     fields.innerHTML = `
-      <div class="field"><label>Every</label><input id="se-n" type="number" min="1" value="${n}"/></div>
-      <div class="field"><label>Unit</label><select id="se-unit">${Object.keys(UNIT_SECONDS).map(u => `<option ${u===unit?"selected":""}>${u}</option>`).join("")}</select></div>
-    `;
+      <div class="field"><label>Repeat mode</label><div class="seg" id="se-random">
+        <button class="${isRnd ? "" : "active"}" data-r="0">Fixed</button>
+        <button class="${isRnd ? "active" : ""}" data-r="1">Random range</button>
+      </div></div>
+      <div class="field" id="se-fixed-row" style="display:${isRnd ? "none" : ""}"><label>Every</label><input id="se-n" type="number" min="1" value="${loN}"/></div>
+      <div class="row2" id="se-window-row" style="display:${isRnd ? "" : "none"};">
+        <div class="field"><label>Between</label><input id="se-lo" type="number" min="1" value="${loN}"/></div>
+        <div class="field"><label>And</label><input id="se-hi" type="number" min="1" value="${hiN}"/></div>
+      </div>
+      <div class="field"><label>Unit</label><select id="se-unit">${Object.keys(UNIT_SECONDS).map(u => `<option ${u===unit?"selected":""}>${u}</option>`).join("")}</select></div>`;
+    bindTimeMode();
   } else {
     const st = existing ? existing.schedule_type : "every_day";
     const tod = existing?.time_of_day || "09:00";
@@ -425,6 +458,7 @@ function renderSchedEditor(existing) {
       renderComplexSubfields(e.target.value, existing);
     });
     bindComplexPills();
+    bindTimeMode();
   }
 }
 
@@ -509,12 +543,27 @@ function localDT(iso) {
 
 function readSchedEditor() {
   if (editorType === "once") {
+    const rnd = !!document.querySelector("#se-random button.active")?.dataset.r === "1";
+    if (rnd) {
+      const lo = $("#se-at-min")?.value, hi = $("#se-at-max")?.value;
+      return { schedule_type: "once", at: null,
+        at_min: lo ? new Date(lo).toISOString() : null,
+        at_max: hi ? new Date(hi).toISOString() : null };
+    }
     const v = $("#se-at")?.value;
     return { schedule_type: "once", at: v ? new Date(v).toISOString() : null, time_of_day: null };
   }
   if (editorType === "interval") {
-    const n = parseInt($("#se-n")?.value || "1", 10);
+    const rnd = !!document.querySelector("#se-random button.active")?.dataset.r === "1";
     const unit = $("#se-unit")?.value || "Hours";
+    if (rnd) {
+      const lo = parseInt($("#se-lo")?.value || "1", 10);
+      const hi = parseInt($("#se-hi")?.value || String(lo), 10);
+      const loSec = Math.max(1, lo) * UNIT_SECONDS[unit];
+      const hiSec = Math.max(1, hi) * UNIT_SECONDS[unit];
+      return { schedule_type: "interval", min_seconds: Math.min(loSec, hiSec), max_seconds: Math.max(loSec, hiSec) };
+    }
+    const n = parseInt($("#se-n")?.value || "1", 10);
     const secs = Math.max(1, n) * UNIT_SECONDS[unit];
     return { schedule_type: "interval", min_seconds: secs, max_seconds: secs };
   }
