@@ -212,16 +212,32 @@ class ReminderScheduler:
         for r in list(self.vault.db.reminders.values()):
             if r.completed:
                 continue
-            self._reschedule_one(r, now)
+            # When booting / redeploying, preserve existing future next_fire timestamps
+            self._reschedule_one(r, now, preserve_future=True)
 
-    def _reschedule_one(self, r: Reminder, now: datetime) -> None:
+    def _reschedule_one(self, r: Reminder, now: datetime, preserve_future: bool = False) -> None:
         jid = self._job_id(r.id)
         # remove any existing job for this reminder
         try:
             self.sched.remove_job(jid)
         except Exception:  # noqa: BLE001
             pass
-        nxt = compute_next_fire(r, now)
+
+        nxt = None
+        # On server redeploy or reboot, if r.next_fire is already set and in the future, preserve it!
+        if preserve_future and r.next_fire:
+            try:
+                cand = datetime.fromisoformat(r.next_fire)
+                if cand.tzinfo is None:
+                    cand = cand.replace(tzinfo=timezone.utc)
+                if cand > now:
+                    nxt = cand
+            except Exception:  # noqa: BLE001
+                pass
+
+        if nxt is None:
+            nxt = compute_next_fire(r, now)
+
         if nxt is None:
             # no more fires (e.g. one-shot already passed, or daterange over)
             if r.schedule_type == "once" and not r.completed:

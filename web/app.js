@@ -437,12 +437,42 @@ async function saveForm() {
 // Settings
 // ---------------------------------------------------------------------------
 
+const TIMEZONES = [
+  "Europe/Amsterdam", "Europe/Berlin", "Europe/Dublin", "Europe/Kyiv", "Europe/Lisbon",
+  "Europe/London", "Europe/Madrid", "Europe/Paris", "Europe/Rome", "Europe/Warsaw",
+  "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
+  "America/Anchorage", "America/Honolulu", "America/Toronto", "America/Vancouver",
+  "America/Sao_Paulo", "America/Buenos_Aires", "America/Mexico_City",
+  "Asia/Dubai", "Asia/Jerusalem", "Asia/Kolkata", "Asia/Bangkok", "Asia/Jakarta",
+  "Asia/Singapore", "Asia/Hong_Kong", "Asia/Shanghai", "Asia/Seoul", "Asia/Tokyo",
+  "Australia/Perth", "Australia/Sydney", "Australia/Melbourne", "Australia/Brisbane",
+  "Pacific/Auckland", "UTC"
+];
+
+function populateTimezones(selectedTz) {
+  const sel = document.getElementById("s-tz");
+  if (!sel) return;
+  sel.innerHTML = "";
+  const tzs = [...TIMEZONES];
+  if (selectedTz && !tzs.includes(selectedTz)) {
+    tzs.unshift(selectedTz);
+  }
+  for (const tz of tzs) {
+    const opt = document.createElement("option");
+    opt.value = tz;
+    opt.textContent = tz.replace(/_/g, " ");
+    if (tz === selectedTz) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
 async function openSettings() {
   try {
     const s = await api("/settings");
-    $("#s-tz").value = s.timezone ?? "";
-    $("#s-snooze").checked = !!s.hide_snooze;
-    $("#settings-backdrop").classList.add("show");
+    const currentTz = s.timezone || s.default_tz || "UTC";
+    populateTimezones(currentTz);
+    document.getElementById("s-snooze").checked = !!s.hide_snooze;
+    document.getElementById("settings-backdrop").classList.add("show");
   } catch (e) { toast(e.message, "err"); }
 }
 
