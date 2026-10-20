@@ -1,3 +1,18 @@
+# Virtualenv
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+
+# Logs
+bot_log.txt
+bot_err.txt
+bot.log
+bot.err.log
+
+# Local env
+.env
 __pycache__/
 *.pyc
 .venv/
