@@ -79,11 +79,14 @@ async def send_reminder(user_id: int, r) -> None:
         else:
             text = r.text
         image_data = await STATE.vault.get_image(r.image_id)
-        if image_data is None and r.image_file_id:
+        # Prefer the cached media file_id when we have it (so the image resends
+        # on every interval even if a fresh vault download fails), then fall back
+        # to freshly downloaded bytes, then a legacy image_file_id.
+        if r.main_file_id or image_data is not None:
+            await _send_media_and_cache(bot, user_id, r, text, image_data)
+        elif r.image_file_id:
             # legacy reminders that already hold a Telegram file_id
             await bot.send_photo(user_id, r.image_file_id, caption=text)
-        elif image_data is not None:
-            await _send_media_and_cache(bot, user_id, r, text, image_data)
         else:
             await bot.send_message(user_id, text)
     except Exception:  # noqa: BLE001
