@@ -446,7 +446,7 @@ function complexSubfields(st, existing) {
   }
   if (st === "every_ndays") {
     return `<div class="row2"><div class="field"><label>Every (days)</label><input id="se-period" type="number" min="1" value="${existing?.period_days || 1}"/></div>
-        <div class="field"><label>At time</label><input id="se-tod" type="time" value="${tod}"/></div></div>
+        <div class="field" id="se-at-time-row" style="display:${existing?.random_time ? "none" : ""}"><label>At time</label><input id="se-tod" type="time" value="${tod}"/></div></div>
       <div class="field"><label>Time mode</label><div class="seg" id="se-random">
         <button class="${existing?.random_time ? "" : "active"}" data-r="0">Fixed</button>
         <button class="${existing?.random_time ? "active" : ""}" data-r="1">Random</button>
@@ -475,6 +475,8 @@ function renderComplexSubfields(st, existing) {
     b.classList.add("active");
     const row = $("#se-window-row");
     if (row) row.style.display = b.dataset.r === "1" ? "" : "none";
+    const atRow = $("#se-at-time-row");
+    if (atRow) atRow.style.display = b.dataset.r === "1" ? "none" : "";
   }));
 }
 
