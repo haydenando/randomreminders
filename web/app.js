@@ -430,7 +430,7 @@ function renderSchedEditor(existing) {
       </div>`;
     bindTimeMode();
   } else if (editorType === "interval") {
-    const isRnd = !!(existing && existing.min_seconds != null && existing.max_seconds != null && existing.min_seconds !== existing.max_seconds);
+    const isRnd = !!(existing?.random_time || (existing && existing.min_seconds != null && existing.max_seconds != null && existing.min_seconds !== existing.max_seconds));
     const lo = existing?.min_seconds != null ? existing.min_seconds : 3600;
     const hi = existing?.max_seconds != null ? existing.max_seconds : lo;
     const { n: loN, unit } = secsToNUnit(lo);
@@ -561,11 +561,12 @@ function readSchedEditor() {
       const hi = parseInt($("#se-hi")?.value || String(lo), 10);
       const loSec = Math.max(1, lo) * UNIT_SECONDS[unit];
       const hiSec = Math.max(1, hi) * UNIT_SECONDS[unit];
-      return { schedule_type: "interval", min_seconds: Math.min(loSec, hiSec), max_seconds: Math.max(loSec, hiSec) };
+      return { schedule_type: "interval", random_time: true,
+        min_seconds: Math.min(loSec, hiSec), max_seconds: Math.max(loSec, hiSec) };
     }
     const n = parseInt($("#se-n")?.value || "1", 10);
     const secs = Math.max(1, n) * UNIT_SECONDS[unit];
-    return { schedule_type: "interval", min_seconds: secs, max_seconds: secs };
+    return { schedule_type: "interval", random_time: false, min_seconds: secs, max_seconds: secs };
   }
   // complex
   const st = $("#se-complex-type")?.value || "every_day";
