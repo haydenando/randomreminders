@@ -445,15 +445,20 @@ function complexSubfields(st, existing) {
       <div class="row2"><div class="field"><label>Start date</label><input id="se-start" type="date" value="${existing?.range_start||""}"/></div><div class="field"><label>End date</label><input id="se-end" type="date" value="${existing?.range_end||""}"/></div></div>`;
   }
   if (st === "every_ndays") {
-    return `<div class="row2"><div class="field"><label>Every (days)</label><input id="se-period" type="number" min="1" value="${existing?.period_days || 1}"/></div>
-        <div class="field" id="se-at-time-row" style="display:${existing?.random_time ? "none" : ""}"><label>At time</label><input id="se-tod" type="time" value="${tod}"/></div></div>
-      <div class="field"><label>Time mode</label><div class="seg" id="se-random">
-        <button class="${existing?.random_time ? "" : "active"}" data-r="0">Fixed</button>
-        <button class="${existing?.random_time ? "active" : ""}" data-r="1">Random</button>
-      </div></div>
-      <div class="row2" id="se-window-row" style="display:${existing?.random_time ? "" : "none"};">
-        <div class="field"><label>From</label><input id="se-ws" type="time" value="${existing?.window_start || ""}"/></div>
-        <div class="field"><label>To</label><input id="se-we" type="time" value="${existing?.window_end || ""}"/></div>
+    const rnd = existing?.random_time;
+    const ws = existing?.window_start || "00:00";
+    const we = existing?.window_end || "23:59";
+    return `<div class="field"><label>Every (days)</label><input id="se-period" type="number" min="1" value="${existing?.period_days || 1}"/></div>
+      <div class="field"><label>Time</label>
+        <select id="se-time-mode">
+          <option value="fixed" ${rnd ? "" : "selected"}>Fixed time</option>
+          <option value="random" ${rnd ? "selected" : ""}>Random</option>
+        </select>
+      </div>
+      <div class="field" id="se-fixed-row" style="display:${rnd ? "none" : ""}"><label>At time</label><input id="se-tod" type="time" value="${tod}"/></div>
+      <div class="row2" id="se-window-row" style="display:${rnd ? "" : "none"};">
+        <div class="field"><label>From</label><input id="se-ws" type="time" value="${ws}"/></div>
+        <div class="field"><label>To</label><input id="se-we" type="time" value="${we}"/></div>
       </div>`;
   }
   if (st === "cron") {
@@ -470,14 +475,13 @@ function renderComplexSubfields(st, existing) {
   `;
   $("#se-complex-type").addEventListener("change", (e) => renderComplexSubfields(e.target.value, existing));
   bindComplexPills();
-  $all("#se-random button").forEach(b => b.addEventListener("click", () => {
-    $all("#se-random button").forEach(x => x.classList.remove("active"));
-    b.classList.add("active");
-    const row = $("#se-window-row");
-    if (row) row.style.display = b.dataset.r === "1" ? "" : "none";
-    const atRow = $("#se-at-time-row");
-    if (atRow) atRow.style.display = b.dataset.r === "1" ? "none" : "";
-  }));
+  $("#se-time-mode")?.addEventListener("change", (e) => {
+    const rnd = e.target.value === "random";
+    const fr = $("#se-fixed-row");
+    if (fr) fr.style.display = rnd ? "none" : "";
+    const wr = $("#se-window-row");
+    if (wr) wr.style.display = rnd ? "" : "none";
+  });
 }
 
 function bindComplexPills() {
@@ -520,8 +524,17 @@ function readSchedEditor() {
   if (st === "daterange") { base.range_start = $("#se-start")?.value; base.range_end = $("#se-end")?.value; }
   if (st === "every_ndays") {
     base.period_days = parseInt($("#se-period")?.value || "1", 10) || 1;
-    base.random_time = !!document.querySelector("#se-random button.active")?.dataset.r === "1";
-    if (base.random_time) { base.window_start = $("#se-ws")?.value || null; base.window_end = $("#se-we")?.value || null; }
+    const mode = $("#se-time-mode")?.value || "fixed";
+    if (mode === "random") {
+      base.random_time = true;
+      base.window_start = $("#se-ws")?.value || "00:00";
+      base.window_end = $("#se-we")?.value || "23:59";
+      base.time_of_day = null;
+    } else {
+      base.random_time = false;
+      base.window_start = null; base.window_end = null;
+      base.time_of_day = $("#se-tod")?.value || "09:00";
+    }
   }
   if (st === "cron") { base.cron_expr = $("#se-cron")?.value.trim(); }
   return base;
