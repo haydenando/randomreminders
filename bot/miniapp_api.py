@@ -52,15 +52,37 @@ def _user_id_from_query(user_id: int | None = Query(default=None)) -> int:
 # Pydantic models
 # ---------------------------------------------------------------------------
 
+class ScheduleIn(BaseModel):
+    schedule_type: str = "once"  # once | interval | every_day | weekdays | monthdays | daterange
+    at: str | None = None
+    time_of_day: str | None = None
+    min_seconds: float | None = None
+    max_seconds: float | None = None
+    weekdays: list[int] = Field(default_factory=list)
+    monthdays: list[int] = Field(default_factory=list)
+    range_start: str | None = None
+    range_end: str | None = None
+
+
 class ReminderIn(BaseModel):
     text: str = Field(min_length=1, max_length=500)
-    kind: str = "reminder"  # reminder | task | task_no_notify
-    schedule_type: str = "interval"  # once|every_day|interval|weekdays|monthdays|daterange
+    kind: str = "reminder"  # reminder | countdown
     tz: str = "UTC"
     image_id: str | None = None
     image_file_id: str | None = None  # legacy (pre-upload) field
     message_template: str | None = None
     note: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    # group key linking multiple schedules to the same logical reminder
+    group_id: int | None = None
+    # countdown mode params
+    target_date: str | None = None        # "YYYY-MM-DD"
+    notification_time: str | None = None  # "HH:MM"
+    countdown_days_before: int | None = None
+    # multiple schedules (regular mode)
+    schedules: list[ScheduleIn] | None = None
+    # backward-compatible single-schedule fields
+    schedule_type: str | None = None
     at: str | None = None
     time_of_day: str | None = None
     min_seconds: float | None = None
@@ -107,12 +129,20 @@ async def list_reminders(user_id: int = Depends(_user_id_from_query)):
         raise HTTPException(503, "not ready")
     db = STATE.vault.db
     items = [r for r in db.reminders.values() if r.user_id == user_id]
-    items.sort(key=lambda r: r.next_fire or "9999")
-    out = []
+    # Group schedules that belong to the same logical reminder (group_id)
+    groups: dict[int, list] = {}
     for r in items:
-        d = r.to_dict()
-        d["next_fire_local"] = _fmt_next(r, us_tz(user_id)) if r.next_fire else None
-        d["line"] = _render_reminder_line(r, us_tz(user_id))
+        gid = r.group_id if r.group_id is not None else r.id
+        groups.setdefault(gid, []).append(r)
+    out = []
+    for gid, mem in groups.items():
+        mem.sort(key=lambda r: r.next_fire or "9999")
+        primary = mem[0]
+        d = primary.to_dict()
+        d["group_id"] = gid
+        d["schedules"] = [m.to_dict() for m in mem]
+        d["next_fire_local"] = _fmt_next(primary, us_tz(user_id)) if primary.next_fire else None
+        d["line"] = _render_reminder_line(primary, us_tz(user_id))
         out.append(d)
     return {"items": out, "count": len(out)}
 
@@ -124,35 +154,112 @@ def us_tz(user_id: int) -> str:
     return us.timezone or STATE.settings.default_tz
 
 
+def _group_members(db, rid: int) -> list:
+    """All reminders that share the same group_id as rid (or just [rid])."""
+    r = db.reminders.get(rid)
+    if r is None:
+        return []
+    gid = r.group_id
+    if gid is None:
+        return [r]
+    return [x for x in db.reminders.values() if x.group_id == gid]
+
+
+def _schedule_dicts(body: ReminderIn) -> list[dict]:
+    """Return one schedule dict per schedule (schedule_type + params)."""
+    if body.kind == "countdown":
+        return _countdown_schedules(body)
+    if body.schedules:
+        return [s.model_dump() for s in body.schedules]
+    # backward-compatible single schedule
+    return [{
+        "schedule_type": body.schedule_type or "interval",
+        "at": body.at,
+        "time_of_day": body.time_of_day,
+        "min_seconds": body.min_seconds,
+        "max_seconds": body.max_seconds,
+        "weekdays": body.weekdays,
+        "monthdays": body.monthdays,
+        "range_start": body.range_start,
+        "range_end": body.range_end,
+    }]
+
+
+def _countdown_schedules(body: ReminderIn) -> list[dict]:
+    """Build schedule(s) for a countdown reminder."""
+    from datetime import date, datetime, time as dtime, timedelta, timezone
+    from zoneinfo import ZoneInfo
+
+    target = body.target_date
+    tod = body.notification_time or "09:00"
+    days_before = body.countdown_days_before or 0
+    z = ZoneInfo(body.tz or "UTC")
+    if target and days_before > 0:
+        try:
+            t = date.fromisoformat(target)
+            start = (t - timedelta(days=days_before)).isoformat()
+            return [{"schedule_type": "daterange", "time_of_day": tod,
+                     "range_start": start, "range_end": target}]
+        except ValueError:
+            pass
+    if target:
+        try:
+            hh, mm = (tod.split(":") + ["00"])[:2]
+            dt = datetime.combine(date.fromisoformat(target), dtime(int(hh), int(mm)), tzinfo=z)
+            return [{"schedule_type": "once", "at": dt.astimezone(timezone.utc).isoformat()}]
+        except (ValueError, TypeError):
+            pass
+    return []
+
+
+def _build_reminder(schema: dict, user_id: int, body: ReminderIn, gid: int) -> Reminder:
+    return Reminder(
+        id=STATE.vault.db.next_id(),
+        user_id=user_id,
+        text=body.text,
+        kind=body.kind,
+        schedule_type=schema.get("schedule_type", "interval"),
+        at=schema.get("at"),
+        time_of_day=schema.get("time_of_day"),
+        min_seconds=schema.get("min_seconds"),
+        max_seconds=schema.get("max_seconds"),
+        weekdays=schema.get("weekdays") or [],
+        monthdays=schema.get("monthdays") or [],
+        range_start=schema.get("range_start"),
+        range_end=schema.get("range_end"),
+        tz=body.tz or us_tz(user_id),
+        image_id=body.image_id,
+        image_file_id=body.image_file_id,
+        message_template=body.message_template,
+        note=body.note,
+        tags=body.tags,
+        target_date=body.target_date,
+        notification_time=body.notification_time,
+        countdown_days_before=body.countdown_days_before,
+        group_id=gid,
+    )
+
+
 @router.post("/reminders", status_code=201)
 async def create_reminder(body: ReminderIn, user_id: int = Depends(_user_id_from_query)):
     if STATE.settings is None or STATE.vault is None or STATE.sched is None:
         raise HTTPException(503, "not ready")
     if not STATE.vault.db.user(user_id).verified:
         raise HTTPException(401, "not verified")
-    r = Reminder(
-        id=STATE.vault.db.next_id(),
-        user_id=user_id,
-        text=body.text,
-        kind=body.kind,
-        schedule_type=body.schedule_type,
-        at=body.at,
-        time_of_day=body.time_of_day,
-        min_seconds=body.min_seconds,
-        max_seconds=body.max_seconds,
-        weekdays=body.weekdays,
-        monthdays=body.monthdays,
-        range_start=body.range_start,
-        range_end=body.range_end,
-        tz=body.tz or us_tz(user_id),
-        image_id=body.image_id,
-        image_file_id=body.image_file_id,
-        message_template=body.message_template,
-        note=body.note,
-    )
-    await STATE.sched.add(r)
-    d = r.to_dict()
-    d["next_fire_local"] = _fmt_next(r, us_tz(user_id)) if r.next_fire else None
+    schemas = _schedule_dicts(body)
+    if not schemas:
+        raise HTTPException(422, "no schedule provided")
+    gid = body.group_id or STATE.vault.db.next_id()
+    created = []
+    for s in schemas:
+        r = _build_reminder(s, user_id, body, gid)
+        await STATE.sched.add(r)
+        created.append(r)
+    primary = created[0]
+    d = primary.to_dict()
+    d["group_id"] = gid
+    d["schedules"] = [c.to_dict() for c in created]
+    d["next_fire_local"] = _fmt_next(primary, us_tz(user_id)) if primary.next_fire else None
     return d
 
 
@@ -160,28 +267,25 @@ async def create_reminder(body: ReminderIn, user_id: int = Depends(_user_id_from
 async def update_reminder(rid: int, body: ReminderIn, user_id: int = Depends(_user_id_from_query)):
     if STATE.sched is None:
         raise HTTPException(503, "not ready")
-    r = STATE.vault.db.reminders.get(rid)
-    if r is None or r.user_id != user_id:
+    members = _group_members(STATE.vault.db, rid)
+    if not members or members[0].user_id != user_id:
         raise HTTPException(404, "not found")
-    r.text = body.text
-    r.kind = body.kind
-    r.schedule_type = body.schedule_type
-    r.at = body.at
-    r.time_of_day = body.time_of_day
-    r.min_seconds = body.min_seconds
-    r.max_seconds = body.max_seconds
-    r.weekdays = body.weekdays
-    r.monthdays = body.monthdays
-    r.range_start = body.range_start
-    r.range_end = body.range_end
-    r.tz = body.tz or r.tz
-    r.image_id = body.image_id
-    r.image_file_id = body.image_file_id
-    r.message_template = body.message_template
-    r.note = body.note
-    await STATE.sched.update(r)
-    d = r.to_dict()
-    d["next_fire_local"] = _fmt_next(r, us_tz(user_id)) if r.next_fire else None
+    gid = members[0].group_id if members[0].group_id is not None else rid
+    for m in members:
+        await STATE.sched.remove(m.id)
+    schemas = _schedule_dicts(body)
+    if not schemas:
+        raise HTTPException(422, "no schedule provided")
+    created = []
+    for s in schemas:
+        r = _build_reminder(s, user_id, body, gid)
+        await STATE.sched.add(r)
+        created.append(r)
+    primary = created[0]
+    d = primary.to_dict()
+    d["group_id"] = gid
+    d["schedules"] = [c.to_dict() for c in created]
+    d["next_fire_local"] = _fmt_next(primary, us_tz(user_id)) if primary.next_fire else None
     return d
 
 
@@ -189,9 +293,11 @@ async def update_reminder(rid: int, body: ReminderIn, user_id: int = Depends(_us
 async def delete_reminder(rid: int, user_id: int = Depends(_user_id_from_query)):
     if STATE.sched is None:
         raise HTTPException(503, "not ready")
-    r = await STATE.sched.remove(rid)
-    if r is None or r.user_id != user_id:
+    members = _group_members(STATE.vault.db, rid)
+    if not members or members[0].user_id != user_id:
         raise HTTPException(404, "not found")
+    for m in members:
+        await STATE.sched.remove(m.id)
     return {"ok": True}
 
 
@@ -203,14 +309,15 @@ async def mark_done(rid: int, user_id: int = Depends(_user_id_from_query)):
     if r is None or r.user_id != user_id:
         raise HTTPException(404, "not found")
     if r.schedule_type == "interval":
-        # Intervals run indefinitely; "done" acknowledges the ping and rolls next interval
+        # Intervals run indefinitely; "done" acknowledges and rolls next interval
         r.completed = False
         await STATE.sched.reschedule(rid)
-    elif r.kind == "task":
+    elif r.schedule_type == "once":
         r.completed = True
         await STATE.sched.remove(rid)
     else:
-        r.completed = True
+        # recurring (every_day/weekdays/monthdays/daterange) keep running
+        r.completed = False
         await STATE.sched.reschedule(rid)
     return {"ok": True}
 

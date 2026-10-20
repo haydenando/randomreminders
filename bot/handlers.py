@@ -13,7 +13,7 @@ Commands:
   /delete <id>         - delete a reminder
   /help                - open help
   /formats             - supported time formats
-  /help_reminder_types - difference between reminder / task / task_no_notify
+  /help_reminder_types - difference between reminder and countdown
   /help_schedules      - what the schedule icons mean
   /cancel              - cancel the current inline action
   /miniapp             - open the Skeddy-style mini app
@@ -145,8 +145,7 @@ def _render_reminder_line(r: Reminder, user_tz: str) -> str:
     icon = _schedule_icon(r)
     kind_tag = {
         "reminder": "R",
-        "task": "T",
-        "task_no_notify": "S",
+        "countdown": "⏳",
     }.get(r.kind, "?")
     parts = [f"{icon} #{r.id} [{kind_tag}] {r.text}"]
     if r.next_fire:
@@ -340,18 +339,15 @@ async def cmd_formats(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def cmd_help_reminder_types(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """/help_reminder_types — the difference between reminders and tasks."""
+    """/help_reminder_types — the difference between reminders and countdowns."""
     if not await verify_gate(ctx, update):
         return
     text = (
         "Reminder types\n\n"
         "🔔 Reminder\n"
-        "  I send it and complete it for you.\n\n"
-        "📝 Task\n"
-        "  I send it and it waits for you to complete it in the mini app.\n\n"
-        "🤫 Task with no notifications\n"
-        "  I don't send it; it just waits for you to complete it."
-        "  Useful for quiet tracking."
+        "  I send it at the scheduled time(s).\n\n"
+        "⏳ Countdown\n"
+        "  I remind you leading up to a target date/time.\n"
     )
     await update.effective_message.reply_text(text)
 

@@ -15,10 +15,11 @@ A personal Telegram reminder bot with a Skeddy-style mini app and a killer featu
   a choice between "Open Mini App" and "Set up in chat" (time zone).
 - **Randomized intervals**: `every 10-20m stretch` fires indefinitely every 10 to 20 minutes,
   re-rolling the random gap each time.
-- **Six schedule types**: specific time, every day, interval, days of the week,
-  days of the month, date range.
-- **Three reminder types**: reminder (auto-complete), task (wait for you),
-  silent task (no notification).
+- **Schedule categories**: One time, Interval, and Complex (every day, days of
+  the week, days of the month, date range). Multiple schedules can be attached
+  to the same reminder.
+- **Two reminder modes**: Regular and Countdown (count down to a target date/time,
+  optionally starting N days in advance).
 - **Customizable message text** per reminder (`{text}`, `{id}`, `{next}` placeholders).
 - **Optional image** per reminder, uploaded from the mini app (no links/file
   ids). Bytes are cached in memory and backed up in the vault chat by the
@@ -36,7 +37,7 @@ A personal Telegram reminder bot with a Skeddy-style mini app and a killer featu
 | `/delete` | delete a reminder (`/delete <id>`) |
 | `/help` | open Help |
 | `/formats` | view supported date and time formats |
-| `/help_reminder_types` | the difference between reminders and tasks |
+| `/help_reminder_types` | the difference between reminders and countdowns |
 | `/help_schedules` | what the icons next to a reminder's times mean |
 | `/cancel` | cancel the current action |
 | `/miniapp` | open the app to create/manage reminders |

@@ -1,4 +1,4 @@
-// Skeddy mini app
+// Reminder Bot mini app
 const tg = window.Telegram?.WebApp;
 tg?.ready?.();
 tg?.expand?.();
@@ -6,21 +6,39 @@ tg?.expand?.();
 const USER_ID = tg?.initDataUnsafe?.user?.id ?? new URLSearchParams(location.search).get("user_id") ?? "";
 const API = "/api";
 
-const SCHEDULE_TYPES = [
-  { id: "once", icon: "\u{1F4CC}", label: "Specific time", desc: "Fire once at a set datetime" },
-  { id: "every_day", icon: "\u{1F4C5}", label: "Every day", desc: "Fire at HH:MM every day" },
-  { id: "interval", icon: "\u{1F3B2}", label: "Interval", desc: "Every Ns (or random in min-max)" },
-  { id: "weekdays", icon: "\u{1F5D3}\uFE0F", label: "Days of the week", desc: "At HH:MM on selected weekdays" },
-  { id: "monthdays", icon: "\u{1F4C6}", label: "Days of the month", desc: "At HH:MM on selected day numbers" },
-  { id: "daterange", icon: "\u{1F501}", label: "Date range", desc: "At HH:MM every day in [start, end]" },
+const TIMEZONES = [
+  "Europe/Amsterdam", "Europe/Berlin", "Europe/Dublin", "Europe/Kyiv", "Europe/Lisbon",
+  "Europe/London", "Europe/Madrid", "Europe/Paris", "Europe/Rome", "Europe/Warsaw",
+  "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
+  "America/Anchorage", "America/Honolulu", "America/Toronto", "America/Vancouver",
+  "America/Sao_Paulo", "America/Buenos_Aires", "America/Mexico_City",
+  "Asia/Dubai", "Asia/Jerusalem", "Asia/Kolkata", "Asia/Bangkok", "Asia/Jakarta",
+  "Asia/Singapore", "Asia/Hong_Kong", "Asia/Shanghai", "Asia/Seoul", "Asia/Tokyo",
+  "Australia/Perth", "Australia/Sydney", "Australia/Melbourne", "Australia/Brisbane",
+  "Pacific/Auckland", "UTC"
 ];
 
 const WEEKDAY_PILLS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const UNIT_SECONDS = { "Seconds": 1, "Minutes": 60, "Hours": 3600, "Days": 86400, "Weeks": 604800 };
 
-let formState = {
-  id: null, text: "", kind: "task", note: "", message_template: "",
-  image_id: null, schedules: [],
-};
+// Schedule categories shown as the top-level choices
+const SCHEDULE_CATEGORIES = [
+  { id: "once", label: "One time", desc: "Fire once at a set date and time" },
+  { id: "interval", label: "Interval", desc: "Repeat every N seconds/minutes/hours/days" },
+  { id: "complex", label: "Complex", desc: "Advanced recurring schedules" },
+];
+// Which (sub)schedule_type belongs to which category
+function categoryFor(type) {
+  if (type === "once") return "once";
+  if (type === "interval") return "interval";
+  return "complex";
+}
+const COMPLEX_TYPES = [
+  { id: "every_day", label: "Every day", desc: "At HH:MM every day" },
+  { id: "weekdays", label: "Days of week", desc: "At HH:MM on selected weekdays" },
+  { id: "monthdays", label: "Days of month", desc: "At HH:MM on selected day numbers" },
+  { id: "daterange", label: "Date range", desc: "At HH:MM every day in [start, end]" },
+];
 
 function $(sel) { return document.querySelector(sel); }
 function $all(sel) { return document.querySelectorAll(sel); }
@@ -43,7 +61,45 @@ async function api(path, opts = {}) {
   return res.json();
 }
 
-let tab = "active"; // active | completed
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+
+function populateTimezones(select, selected) {
+  if (!select) return;
+  const tzs = [...TIMEZONES];
+  const cur = selected || "UTC";
+  if (cur && !tzs.includes(cur)) tzs.unshift(cur);
+  select.innerHTML = "";
+  for (const tz of tzs) {
+    const opt = document.createElement("option");
+    opt.value = tz;
+    opt.textContent = tz.replace(/_/g, " ") + " (" + tz.split("/").pop() + ")";
+    if (tz === cur) opt.selected = true;
+    select.appendChild(opt);
+  }
+}
+
+function fmtDur(s) {
+  s = Number(s) || 0;
+  if (s < 60) return s + "s";
+  if (s < 3600) return Math.round(s/60) + "m";
+  if (s < 86400) return Math.round(s/3600) + "h";
+  return Math.round(s/86400) + "d";
+}
+
+// ---------------------------------------------------------------------------
+// View switching
+// ---------------------------------------------------------------------------
+function showView(id) {
+  $all(".view").forEach(v => v.classList.remove("show"));
+  $(id).classList.add("show");
+}
+
+// ---------------------------------------------------------------------------
+// List
+// ---------------------------------------------------------------------------
+let tab = "active";
 
 async function loadList() {
   const main = $("#main");
@@ -53,7 +109,7 @@ async function loadList() {
     renderTabs();
     const items = data.items.filter(r => tab === "active" ? !r.completed : r.completed);
     if (!items.length) {
-      main.innerHTML = `<div class="empty"><span class="big">\u{1F4CB}</span>No ${tab} reminders yet.<br/>Create one here or via chat.</div>`;
+      main.innerHTML = `<div class="empty"><span class="big">\\u{1F4CB}</span>No ${tab} reminders yet.<br/>Tap + Create to add one.</div>`;
       return;
     }
     main.innerHTML = items.map(renderCard).join("");
@@ -86,30 +142,38 @@ function renderTabs() {
   });
 }
 
+function kindIcon(r) {
+  return r.kind === "countdown" ? "\\u{23F3}" : "\\u{1F514}";
+}
+
 function renderCard(r) {
-  const kindLabel = { reminder: "Reminder", task: "Task", task_no_notify: "Silent" }[r.kind] ?? r.kind;
-  const sched = SCHEDULE_TYPES.find(s => s.id === r.schedule_type) ?? {};
-  const schedIcon = sched.icon ?? "\u{2753}";
-  const schedLabel = sched.label ?? r.schedule_type;
-  const snoozeBtns = (r.kind === "task" && !r.completed)
+  const kindLabel = r.kind === "countdown" ? "Countdown" : "Reminder";
+  const scheds = (r.schedules && r.schedules.length) ? r.schedules : [r];
+  const schedPills = scheds.map(s => `<span class="sched-pill">${escapeHtml(scheduleDetailLabel(s))}</span>`).join("");
+  const tags = (r.tags && r.tags.length)
+    ? `<div class="tag-holder">${r.tags.map(t => `<span class="tag-chip">#${escapeHtml(t)}</span>`).join("")}</div>`
+    : "";
+  const snoozeBtns = (r.kind !== "countdown" && !r.completed)
     ? [60, 300, 900, 3600].map(s => `<button class="snooze snooze-${r.id}" data-secs="${s}">+${s < 3600 ? s/60 + "m" : s/3600 + "h"}</button>`).join("")
     : "";
-  const imgTag = r.image_id ? " \u{1F5BC}" : "";
+  const imgTag = r.image_id ? " \\u{1F5BC}" : "";
   return `
     <div class="card" data-id="${r.id}">
       <div class="top">
-        <div class="chip">${schedIcon}</div>
+        <div class="chip">${kindIcon(r)}</div>
         <div class="body">
           <div class="title">${escapeHtml(r.text)}${imgTag}</div>
-          <div class="meta">${schedLabel} &middot; next: ${r.next_fire_local ?? "?"}</div>
+          <div class="meta">${schedPills}</div>
+          <div class="meta">next: ${r.next_fire_local ?? "?"}</div>
           ${r.note ? `<div class="note">${escapeHtml(r.note)}</div>` : ""}
+          ${tags}
         </div>
         <div class="right">
           <span class="badge ${r.completed ? "muted" : ""}">${kindLabel}</span>
         </div>
       </div>
       <div class="actions">
-        ${r.completed ? "" : `<button class="done" id="done-${r.id}">\u2705 Done</button>`}
+        ${r.completed ? "" : `<button class="done" id="done-${r.id}">\\u2705 Done</button>`}
         ${snoozeBtns}
         <span class="spacer"></span>
         <button id="edit-${r.id}">Edit</button>
@@ -119,12 +183,8 @@ function renderCard(r) {
   `;
 }
 
-function escapeHtml(s) {
-  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
-}
-
 async function markDone(rid) {
-  try { await api(`/reminders/${rid}/done`, { method: "POST" }); toast("Completed"); loadList(); }
+  try { await api(`/reminders/${rid}/done`, { method: "POST" }); toast("Done"); loadList(); }
   catch (e) { toast(e.message, "err"); }
 }
 async function del(rid) {
@@ -138,31 +198,321 @@ async function snooze(rid, secs) {
 }
 
 // ---------------------------------------------------------------------------
-// Image upload (uploaded to /api/images, stored via the Vault)
+// Form state
 // ---------------------------------------------------------------------------
+let formState = {
+  mode: "regular", id: null, text: "", note: "", message_template: "",
+  image_id: null, tz: "", tags: [], schedules: [],
+  target_date: "", notification_time: "09:00", countdown_days_before: 0,
+};
 
+function textInput() { return formState.mode === "countdown" ? $("#c-text") : $("#f-text"); }
+
+function switchMode(mode) {
+  // Sync text across the two textareas
+  const from = formState.mode === "countdown" ? $("#c-text") : $("#f-text");
+  const to = mode === "countdown" ? $("#c-text") : $("#f-text");
+  if (from && to) to.value = from.value;
+  formState.mode = mode;
+  $all("#mode-row button").forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
+  $("#regular-fields").style.display = mode === "regular" ? "block" : "none";
+  $("#countdown-fields").style.display = mode === "countdown" ? "block" : "none";
+}
+
+async function openCreate() {
+  // fetch default timezone
+  let tz = "UTC";
+  try { const me = await api("/me"); tz = me.timezone || me.default_tz || "UTC"; } catch {}
+  formState = {
+    mode: "regular", id: null, text: "", note: "", message_template: "",
+    image_id: null, tz, tags: [], schedules: [],
+    target_date: "", notification_time: "09:00", countdown_days_before: 0,
+  };
+  $("#form-head-title").textContent = "Create Reminder";
+  resetFormUI();
+  showView("#form-view");
+}
+
+function openEdit(r) {
+  formState = {
+    mode: r.kind === "countdown" ? "countdown" : "regular",
+    id: r.id, text: r.text, note: r.note || "", message_template: r.message_template || "",
+    image_id: r.image_id || null, tz: r.tz || "UTC", tags: r.tags || [],
+    schedules: (r.schedules && r.schedules.length) ? r.schedules.map(s => pickSched(s)) : [pickSched(r)],
+    target_date: r.target_date || "", notification_time: r.notification_time || "09:00",
+    countdown_days_before: r.countdown_days_before || 0,
+  };
+  $("#form-head-title").textContent = `Edit #${r.id}`;
+  resetFormUI();
+  showView("#form-view");
+}
+
+function pickSched(s) {
+  return {
+    schedule_type: s.schedule_type, at: s.at, time_of_day: s.time_of_day,
+    min_seconds: s.min_seconds, max_seconds: s.max_seconds,
+    weekdays: s.weekdays || [], monthdays: s.monthdays || [],
+    range_start: s.range_start, range_end: s.range_end,
+  };
+}
+
+function resetFormUI() {
+  $("#f-text").value = formState.text;
+  $("#c-text").value = formState.text;
+  $("#f-note").value = formState.note;
+  $("#f-template").value = formState.message_template;
+  $("#c-date").value = formState.target_date;
+  $("#c-time").value = formState.notification_time;
+  $("#c-days").value = formState.countdown_days_before || "";
+  populateTimezones($("#f-tz"), formState.tz);
+  populateTimezones($("#c-tz"), formState.tz);
+  switchMode(formState.mode);
+  renderTags();
+  renderScheduleList();
+  resetImageUI(formState.image_id);
+  if (formState.image_id) showImagePreview(`${API}/images/${formState.image_id}?user_id=${encodeURIComponent(USER_ID)}`);
+}
+
+// ---------------------------------------------------------------------------
+// Tags
+// ---------------------------------------------------------------------------
+function renderTags() {
+  const renders = (wrapId, inputId) => {
+    const wrap = $(wrapId);
+    if (!wrap) return;
+    const chips = formState.tags.map((t, i) => `<span class="chip">#${escapeHtml(t)}<span class="x" data-i="${i}">\\u00d7</span></span>`).join("");
+    wrap.innerHTML = `${chips}<button class="chip-add" data-add>+ Add tag</button><input id="${inputId}" placeholder="Type a tag and press Enter" style="display:none; flex:1; min-width:120px;"/>`;
+  };
+  renders("#tag-wrap", "tag-input");
+  renders("#c-tag-wrap", "c-tag-input");
+  $all("[data-add]").forEach(b => b.addEventListener("click", () => {
+    const input = b.parentElement.querySelector("input");
+    input.style.display = "block";
+    input.focus();
+  }));
+  $all("#tag-wrap input, #c-tag-wrap input").forEach(inp => {
+    inp.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        const v = inp.value.trim();
+        inp.value = "";
+        if (v && !formState.tags.includes(v)) formState.tags.push(v);
+        renderTags();
+      }
+    });
+  });
+  $all(".chip .x").forEach(x => x.addEventListener("click", () => {
+    formState.tags.splice(parseInt(x.dataset.i, 10), 1);
+    renderTags();
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Schedules (regular mode)
+// ---------------------------------------------------------------------------
+function renderScheduleList() {
+  const list = $("#schedule-list");
+  if (!formState.schedules.length) { list.innerHTML = ""; return; }
+  list.innerHTML = formState.schedules.map((s, i) => `
+    <div class="sched-item">
+      <div class="label">${escapeHtml(scheduleDetailLabel(s))}
+        <div class="sub">${categoryFor(s.schedule_type) === "complex" ? "Complex" : (categoryFor(s.schedule_type) === "interval" ? "Interval" : "One time")}</div>
+      </div>
+      <div class="actions">
+        <button class="icon-btn" data-act="edit-sched" data-idx="${i}">\\u270E</button>
+        <button class="icon-btn" data-act="del-sched" data-idx="${i}">\\u{1F5D1}</button>
+      </div>
+    </div>
+  `).join("");
+  list.querySelectorAll("[data-act]").forEach(b => {
+    b.addEventListener("click", () => {
+      const idx = parseInt(b.dataset.idx, 10);
+      if (b.dataset.act === "del-sched") { formState.schedules.splice(idx, 1); renderScheduleList(); }
+      if (b.dataset.act === "edit-sched") openScheduleEditor(formState.schedules[idx]);
+    });
+  });
+}
+
+function scheduleDetailLabel(s) {
+  const type = s.schedule_type;
+  if (type === "once") {
+    if (!s.at) return "One time";
+    return "One time: " + new Date(s.at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  }
+  if (type === "interval") {
+    const secs = s.min_seconds ?? s.max_seconds;
+    return "Every " + fmtDur(secs);
+  }
+  if (type === "every_day") return "Every day at " + (s.time_of_day || "09:00");
+  if (type === "weekdays") return (s.weekdays || []).map(i => WEEKDAY_PILLS[i]).join(", ") + " at " + (s.time_of_day || "09:00");
+  if (type === "monthdays") return "Days " + (s.monthdays || []).join(", ") + " at " + (s.time_of_day || "09:00");
+  if (type === "daterange") return `${s.range_start} \\u2192 ${s.range_end} at ${s.time_of_day || "09:00"}`;
+  return type;
+}
+
+function openSchedulePicker() {
+  const opts = $("#sched-options");
+  opts.innerHTML = SCHEDULE_CATEGORIES.map(c => `
+    <div class="option" data-id="${c.id}">
+      <div><div class="t">${c.label}</div><div class="s">${c.desc}</div></div>
+      <div class="chev">\\u203A</div>
+    </div>
+  `).join("");
+  opts.querySelectorAll(".option").forEach(o => {
+    o.addEventListener("click", () => {
+      $("#sched-picker-backdrop").classList.remove("show");
+      openScheduleEditor(null, o.dataset.id);
+    });
+  });
+  $("#sched-picker-backdrop").classList.add("show");
+}
+
+let editingSchedIdx = null;
+let editorType = "once";
+
+function openScheduleEditor(existing, category) {
+  editingSchedIdx = (existing && formState.schedules.indexOf(existing) !== -1) ? formState.schedules.indexOf(existing) : null;
+  editorType = existing ? categoryFor(existing.schedule_type) : (category || "once");
+  $("#sched-editor-title").textContent = editingSchedIdx !== null ? "Edit Schedule" : "Schedule";
+  const seg = $("#sched-type-row");
+  seg.querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.type === editorType));
+  renderSchedEditor(existing);
+  $("#sched-editor-backdrop").classList.add("show");
+}
+
+function renderSchedEditor(existing) {
+  const fields = $("#sched-editor-fields");
+  if (editorType === "once") {
+    fields.innerHTML = `
+      <div class="field"><label>Date & time</label><input id="se-at" type="datetime-local" value="${existing && existing.at ? localDT(existing.at) : ""}"/></div>
+    `;
+  } else if (editorType === "interval") {
+    let secs = existing && (existing.min_seconds ?? existing.max_seconds) ? (existing.min_seconds ?? existing.max_seconds) : 3600;
+    const { n, unit } = secsToNUnit(secs);
+    fields.innerHTML = `
+      <div class="field"><label>Every</label><input id="se-n" type="number" min="1" value="${n}"/></div>
+      <div class="field"><label>Unit</label><select id="se-unit">${Object.keys(UNIT_SECONDS).map(u => `<option ${u===unit?"selected":""}>${u}</option>`).join("")}</select></div>
+    `;
+  } else {
+    const st = existing ? existing.schedule_type : "every_day";
+    const tod = existing?.time_of_day || "09:00";
+    fields.innerHTML = `
+      <div class="field"><label>Repeat</label><select id="se-complex-type">${COMPLEX_TYPES.map(c => `<option value="${c.id}" ${c.id===st?"selected":""}>${c.label}</option>`).join("")}</select></div>
+      ${complexSubfields(st, existing)}
+    `;
+    $("#se-complex-type").addEventListener("change", (e) => {
+      renderComplexSubfields(e.target.value, existing);
+    });
+    bindComplexPills();
+  }
+}
+
+function complexSubfields(st, existing) {
+  const tod = existing?.time_of_day || "09:00";
+  if (st === "weekdays") {
+    const sel = existing?.weekdays || [];
+    return `<div class="field"><label>Time</label><input id="se-tod" type="time" value="${tod}"/></div>
+      <div class="field"><label>Days</label><div class="pill-row">${WEEKDAY_PILLS.map((w,i)=>`<div class="pill ${sel.includes(i)?"active":""}" data-weekday="${i}">${w}</div>`).join("")}</div></div>`;
+  }
+  if (st === "monthdays") {
+    const sel = existing?.monthdays || [];
+    return `<div class="field"><label>Time</label><input id="se-tod" type="time" value="${tod}"/></div>
+      <div class="field"><label>Days of month</label><div class="pill-row">${Array.from({length:31},(_,i)=>i+1).map(d=>`<div class="pill ${sel.includes(d)?"active":""}" data-monthday="${d}">${d}</div>`).join("")}</div></div>`;
+  }
+  if (st === "daterange") {
+    return `<div class="field"><label>Time</label><input id="se-tod" type="time" value="${tod}"/></div>
+      <div class="row2"><div class="field"><label>Start date</label><input id="se-start" type="date" value="${existing?.range_start||""}"/></div><div class="field"><label>End date</label><input id="se-end" type="date" value="${existing?.range_end||""}"/></div></div>`;
+  }
+  return `<div class="field"><label>Time</label><input id="se-tod" type="time" value="${tod}"/></div>`;
+}
+
+function renderComplexSubfields(st, existing) {
+  const fields = $("#sched-editor-fields");
+  fields.innerHTML = `
+    <div class="field"><label>Repeat</label><select id="se-complex-type">${COMPLEX_TYPES.map(c => `<option value="${c.id}" ${c.id===st?"selected":""}>${c.label}</option>`).join("")}</select></div>
+    ${complexSubfields(st, existing)}
+  `;
+  $("#se-complex-type").addEventListener("change", (e) => renderComplexSubfields(e.target.value, existing));
+  bindComplexPills();
+}
+
+function bindComplexPills() {
+  $all("[data-weekday]").forEach(p => p.addEventListener("click", () => p.classList.toggle("active")));
+  $all("[data-monthday]").forEach(p => p.addEventListener("click", () => p.classList.toggle("active")));
+}
+
+function secsToNUnit(secs) {
+  const units = Object.entries(UNIT_SECONDS).sort((a,b) => b[1] - a[1]);
+  for (const [unit, mult] of units) {
+    if (secs % mult === 0) return { n: secs / mult, unit };
+  }
+  return { n: secs, unit: "Seconds" };
+}
+
+function localDT(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const pad = (x) => String(x).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function readSchedEditor() {
+  if (editorType === "once") {
+    const v = $("#se-at")?.value;
+    return { schedule_type: "once", at: v ? new Date(v).toISOString() : null, time_of_day: null };
+  }
+  if (editorType === "interval") {
+    const n = parseInt($("#se-n")?.value || "1", 10);
+    const unit = $("#se-unit")?.value || "Hours";
+    const secs = Math.max(1, n) * UNIT_SECONDS[unit];
+    return { schedule_type: "interval", min_seconds: secs, max_seconds: secs };
+  }
+  // complex
+  const st = $("#se-complex-type")?.value || "every_day";
+  const tod = $("#se-tod")?.value || "09:00";
+  const base = { schedule_type: st, time_of_day: tod };
+  if (st === "weekdays") base.weekdays = [...$all("[data-weekday].active")].map(p => parseInt(p.dataset.weekday, 10));
+  if (st === "monthdays") base.monthdays = [...$all("[data-monthday].active")].map(p => parseInt(p.dataset.monthday, 10));
+  if (st === "daterange") { base.range_start = $("#se-start")?.value; base.range_end = $("#se-end")?.value; }
+  return base;
+}
+
+$("#sched-type-row").addEventListener("click", (e) => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+  editorType = btn.dataset.type;
+  $all("#sched-type-row button").forEach(b => b.classList.toggle("active", b === btn));
+  renderSchedEditor(null);
+});
+
+$("#sched-ok").addEventListener("click", () => {
+  const d = readSchedEditor();
+  if (editingSchedIdx !== null) formState.schedules[editingSchedIdx] = d;
+  else formState.schedules.push(d);
+  $("#sched-editor-backdrop").classList.remove("show");
+  renderScheduleList();
+});
+
+$("#sched-cancel").addEventListener("click", () => $("#sched-editor-backdrop").classList.remove("show"));
+
+// ---------------------------------------------------------------------------
+// Image upload
+// ---------------------------------------------------------------------------
 let imgObjectUrl = null;
-
 function resetImageUI(imageId) {
   formState.image_id = imageId ?? null;
   $("#img-error").textContent = "";
   $("#img-preview").style.display = "none";
   if (imgObjectUrl) { URL.revokeObjectURL(imgObjectUrl); imgObjectUrl = null; }
 }
-
 function showImagePreview(src) {
   const box = $("#img-preview");
   $("#img-preview-img").src = src;
   box.style.display = "block";
 }
-
 async function onImagePicked(file) {
   $("#img-error").textContent = "";
   if (!file) return;
-  if (file.size > 5 * 1024 * 1024) {
-    $("#img-error").textContent = "Image is larger than 5 MB";
-    return;
-  }
+  if (file.size > 5 * 1024 * 1024) { $("#img-error").textContent = "Image is larger than 5 MB"; return; }
   imgObjectUrl = URL.createObjectURL(file);
   showImagePreview(imgObjectUrl);
   try {
@@ -176,313 +526,79 @@ async function onImagePicked(file) {
     formState.image_id = null;
   }
 }
-
 function onImageRemoved() {
-  if (formState.image_id) {
-    api(`/images/${formState.image_id}`, { method: "DELETE" }).catch(() => {});
-  }
+  if (formState.image_id) api(`/images/${formState.image_id}`, { method: "DELETE" }).catch(() => {});
   resetImageUI(null);
 }
 
 // ---------------------------------------------------------------------------
-// Create / Edit form
+// Save
 // ---------------------------------------------------------------------------
-
-function openCreate() {
-  formState = { id: null, text: "", kind: "task", note: "", message_template: "", image_id: null, schedules: [] };
-  formState.raw = [];
-  $("#form-title").textContent = "New reminder";
-  $("#f-text").value = "";
-  $("#f-note").value = "";
-  $("#f-template").value = "";
-  $all('input[name="kind"]').forEach(r => { r.checked = r.value === "task"; });
-  resetImageUI(null);
-  renderScheduleList();
-  $("#form-backdrop").classList.add("show");
-}
-
-function openEdit(r) {
-  formState = {
-    id: r.id, text: r.text, kind: r.kind, note: r.note || "",
-    message_template: r.message_template || "", image_id: r.image_id || null,
-    schedules: [r].map(x => x),
-  };
-  formState.raw = [r];
-  $("#form-title").textContent = `Edit #${r.id}`;
-  $("#f-text").value = r.text;
-  $("#f-note").value = r.note || "";
-  $("#f-template").value = r.message_template || "";
-  $all('input[name="kind"]').forEach(rad => { rad.checked = rad.value === r.kind; });
-  resetImageUI(r.image_id || null);
-  if (r.image_id) showImagePreview(`${API}/images/${r.image_id}?user_id=${encodeURIComponent(USER_ID)}`);
-  renderScheduleList();
-  $("#form-backdrop").classList.add("show");
-}
-
-function renderScheduleList() {
-  const list = $("#schedule-list");
-  if (!formState.raw || !formState.raw.length) { list.innerHTML = ""; return; }
-  list.innerHTML = formState.raw.map((r, i) => {
-    const s = SCHEDULE_TYPES.find(x => x.id === r.schedule_type) ?? {};
-    return `
-      <div class="schedule-row">
-        <div class="label">${s.icon ?? ""} ${escapeHtml(scheduleDetail(r))}
-          <div class="sub">${s.label ?? r.schedule_type}</div>
-        </div>
-        <div>
-          <button class="icon-btn" data-act="edit-sched" data-idx="${i}">\u{270E}</button>
-          <button class="icon-btn" data-act="del-sched" data-idx="${i}">\u{1F5D1}</button>
-        </div>
-      </div>
-    `;
-  }).join("");
-  list.querySelectorAll("[data-act]").forEach(b => {
-    b.addEventListener("click", () => {
-      const idx = parseInt(b.dataset.idx, 10);
-      if (b.dataset.act === "del-sched") { formState.raw.splice(idx, 1); renderScheduleList(); }
-      if (b.dataset.act === "edit-sched") { editSchedule(idx); }
-    });
-  });
-}
-
-function scheduleDetail(r) {
-  switch (r.schedule_type) {
-    case "once": return r.at ?? "";
-    case "every_day": return r.time_of_day ?? "09:00";
-    case "interval": {
-      const lo = r.min_seconds ?? 0, hi = r.max_seconds ?? lo;
-      if (lo === hi) return `every ${fmtDur(lo)}`;
-      return `${fmtDur(lo)} \u2013 ${fmtDur(hi)} (random)`;
-    }
-    case "weekdays": return `${(r.weekdays || []).map(i => WEEKDAY_PILLS[i]).join(", ")} at ${r.time_of_day ?? "09:00"}`;
-    case "monthdays": return `days ${(r.monthdays || []).join(", ")} at ${r.time_of_day ?? "09:00"}`;
-    case "daterange": return `${r.range_start} \u2192 ${r.range_end} at ${r.time_of_day ?? "09:00"}`;
-    default: return "";
-  }
-}
-
-function fmtDur(s) {
-  if (s < 60) return s + "s";
-  if (s < 3600) return Math.round(s/60) + "m";
-  if (s < 86400) return Math.round(s/3600) + "h";
-  return Math.round(s/86400) + "d";
-}
-
-let editingSchedIdx = null;
-
-function addSchedule() {
-  editingSchedIdx = null;
-  const opts = $("#sched-options");
-  opts.innerHTML = SCHEDULE_TYPES.map(s => `
-    <div class="option" data-id="${s.id}">
-      <div><div class="t">${s.icon} ${s.label}</div><div class="s">${s.desc}</div></div>
-      <div class="chev">\u203A</div>
-    </div>
-  `).join("");
-  opts.querySelectorAll(".option").forEach(o => {
-    o.addEventListener("click", () => {
-      const id = o.dataset.id;
-      $("#sched-picker-backdrop").classList.remove("show");
-      openScheduleEditor(id);
-    });
-  });
-  $("#sched-picker-backdrop").classList.add("show");
-}
-
-function editSchedule(idx) {
-  editingSchedIdx = idx;
-  const r = formState.raw[idx];
-  openScheduleEditor(r.schedule_type, r);
-}
-
-function openScheduleEditor(type, existing) {
-  const list = $("#schedule-list");
-  const wrap = document.createElement("div");
-  wrap.style.margin = "10px 0";
-  wrap.style.background = "var(--tg-panel)";
-  wrap.style.borderRadius = "10px";
-  wrap.style.padding = "12px";
-  const s = SCHEDULE_TYPES.find(x => x.id === type);
-  wrap.innerHTML = `
-    <div style="font-weight:600; margin-bottom:8px;">${s.icon} ${s.label}</div>
-    ${scheduleFieldsHtml(type, existing)}
-    <div style="display:flex; gap:6px; margin-top:10px;">
-      <button id="sched-ok" style="flex:1; background:var(--accent); color:var(--tg-button-text, #06281f); border:0; padding:10px; border-radius:8px; font-weight:600; cursor:pointer;">OK</button>
-      <button id="sched-cancel" style="background:var(--tg-panel); color:var(--tg-text); border:0; padding:10px; border-radius:8px; cursor:pointer;">Cancel</button>
-    </div>
-  `;
-  list.appendChild(wrap);
-  wrap.querySelectorAll("[data-weekday]").forEach(p => {
-    p.addEventListener("click", () => p.classList.toggle("active"));
-  });
-  wrap.querySelectorAll("[data-monthday]").forEach(p => {
-    p.addEventListener("click", () => p.classList.toggle("active"));
-  });
-  $("#sched-ok").addEventListener("click", () => {
-    const d = scheduleFieldsRead(wrap, type);
-    if (editingSchedIdx !== null) {
-      formState.raw[editingSchedIdx] = { ...formState.raw[editingSchedIdx], schedule_type: type, ...d };
-    } else {
-      formState.raw = formState.raw || [];
-      formState.raw.push({ schedule_type: type, ...d, text: "", kind: "task" });
-    }
-    wrap.remove();
-    renderScheduleList();
-  });
-  $("#sched-cancel").addEventListener("click", () => wrap.remove());
-}
-
-function scheduleFieldsHtml(type, r) {
-  const tod = r?.time_of_day ?? "09:00";
-  switch (type) {
-    case "once":
-      return `<div class="field"><label>At</label><input id="sf-at" type="datetime-local" value="${r?.at ?? ""}"/></div>`;
-    case "every_day":
-      return `<div class="field"><label>Time</label><input id="sf-tod" type="time" value="${tod}"/></div>`;
-    case "interval": {
-      const lo = r?.min_seconds ?? 600, hi = r?.max_seconds ?? 1200;
-      return `
-        <div class="field"><label>Min (seconds)</label><input id="sf-lo" type="number" value="${lo}" min="1"/></div>
-        <div class="field"><label>Max (seconds) \u2014 set equal to min for fixed interval</label><input id="sf-hi" type="number" value="${hi}" min="1"/></div>
-      `;
-    }
-    case "weekdays":
-      return `
-        <div class="field"><label>Time</label><input id="sf-tod" type="time" value="${tod}"/></div>
-        <div class="field"><label>Weekdays</label>
-          <div class="pill-row">
-            ${WEEKDAY_PILLS.map((w, i) => `<div class="pill ${r?.weekdays?.includes(i) ? "active" : ""}" data-weekday="${i}">${w}</div>`).join("")}
-          </div>
-        </div>
-      `;
-    case "monthdays":
-      return `
-        <div class="field"><label>Time</label><input id="sf-tod" type="time" value="${tod}"/></div>
-        <div class="field"><label>Days of month</label>
-          <div class="pill-row">
-            ${Array.from({length: 31}, (_, i) => i + 1).map(d => `<div class="pill ${r?.monthdays?.includes(d) ? "active" : ""}" data-monthday="${d}">${d}</div>`).join("")}
-          </div>
-        </div>
-      `;
-    case "daterange":
-      return `
-        <div class="field"><label>Time</label><input id="sf-tod" type="time" value="${tod}"/></div>
-        <div class="field"><label>Start date</label><input id="sf-start" type="date" value="${r?.range_start ?? ""}"/></div>
-        <div class="field"><label>End date</label><input id="sf-end" type="date" value="${r?.range_end ?? ""}"/></div>
-      `;
-    default: return "";
-  }
-}
-
-function scheduleFieldsRead(wrap, type) {
-  const val = (sel) => wrap.querySelector(sel)?.value;
-  const tod = val("#sf-tod") || "09:00";
-  switch (type) {
-    case "once": {
-      const v = val("#sf-at");
-      return { at: v ? new Date(v).toISOString() : null, time_of_day: null };
-    }
-    case "every_day": return { time_of_day: tod };
-    case "interval": {
-      const lo = parseInt(val("#sf-lo") || "60", 10);
-      const hi = parseInt(val("#sf-hi") || String(lo), 10);
-      return { min_seconds: lo, max_seconds: hi };
-    }
-    case "weekdays": {
-      const days = [...wrap.querySelectorAll("[data-weekday].active")].map(p => parseInt(p.dataset.weekday, 10));
-      return { time_of_day: tod, weekdays: days };
-    }
-    case "monthdays": {
-      const days = [...wrap.querySelectorAll("[data-monthday].active")].map(p => parseInt(p.dataset.monthday, 10));
-      return { time_of_day: tod, monthdays: days };
-    }
-    case "daterange": return { time_of_day: tod, range_start: val("#sf-start"), range_end: val("#sf-end") };
-    default: return {};
-  }
-}
-
 async function saveForm() {
-  const text = $("#f-text").value.trim();
-  if (!text) { toast("Enter a reminder text", "err"); return; }
-  if (!formState.raw || !formState.raw.length) { toast("Add at least one schedule", "err"); return; }
-  const kind = ($('input[name="kind"]:checked') ?? {}).value ?? "task";
-  const me = await api("/me");
-  const tz = me.timezone || me.default_tz;
-  const body = (sched) => ({
-    text, kind, note: $("#f-note").value.trim() || null,
-    message_template: $("#f-template").value.trim() || null,
-    image_id: formState.image_id ?? null,
-    schedule_type: sched.schedule_type, tz,
-    at: sched.at ?? null, time_of_day: sched.time_of_day ?? null,
-    min_seconds: sched.min_seconds ?? null, max_seconds: sched.max_seconds ?? null,
-    weekdays: sched.weekdays ?? [], monthdays: sched.monthdays ?? [],
-    range_start: sched.range_start ?? null, range_end: sched.range_end ?? null,
-  });
+  formState.text = textInput().value.trim();
+  formState.note = $("#f-note").value.trim() || null;
+  formState.message_template = $("#f-template").value.trim() || null;
+  formState.tz = (formState.mode === "countdown" ? $("#c-tz") : $("#f-tz")).value;
+
+  if (!formState.text) { toast("Enter a reminder text", "err"); return; }
+
+  let body;
+  if (formState.mode === "countdown") {
+    formState.target_date = $("#c-date").value;
+    formState.notification_time = $("#c-time").value || "09:00";
+    formState.countdown_days_before = parseInt($("#c-days").value || "0", 10) || 0;
+    if (!formState.target_date) { toast("Pick a target date", "err"); return; }
+    body = {
+      kind: "countdown", text: formState.text, tz: formState.tz,
+      note: formState.note, image_id: formState.image_id || null,
+      message_template: formState.message_template, tags: formState.tags,
+      target_date: formState.target_date, notification_time: formState.notification_time,
+      countdown_days_before: formState.countdown_days_before,
+    };
+  } else {
+    if (!formState.schedules.length) { toast("Add at least one schedule", "err"); return; }
+    body = {
+      kind: "reminder", text: formState.text, tz: formState.tz,
+      note: formState.note, image_id: formState.image_id || null,
+      message_template: formState.message_template, tags: formState.tags,
+      schedules: formState.schedules,
+    };
+  }
+
   try {
     if (formState.id === null) {
-      for (const sched of formState.raw) {
-        await api("/reminders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body(sched)) });
-      }
-      toast(`Created ${formState.raw.length} reminder(s)`);
+      await api("/reminders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      toast("Created");
     } else {
-      await api(`/reminders/${formState.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body(formState.raw[0])) });
+      await api(`/reminders/${formState.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       toast("Updated");
     }
-    $("#form-backdrop").classList.remove("show");
+    showView("#list-view");
     loadList();
   } catch (e) { toast(e.message, "err"); }
 }
 
+window.saveForm = saveForm;
+
 // ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
-
-const TIMEZONES = [
-  "Europe/Amsterdam", "Europe/Berlin", "Europe/Dublin", "Europe/Kyiv", "Europe/Lisbon",
-  "Europe/London", "Europe/Madrid", "Europe/Paris", "Europe/Rome", "Europe/Warsaw",
-  "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
-  "America/Anchorage", "America/Honolulu", "America/Toronto", "America/Vancouver",
-  "America/Sao_Paulo", "America/Buenos_Aires", "America/Mexico_City",
-  "Asia/Dubai", "Asia/Jerusalem", "Asia/Kolkata", "Asia/Bangkok", "Asia/Jakarta",
-  "Asia/Singapore", "Asia/Hong_Kong", "Asia/Shanghai", "Asia/Seoul", "Asia/Tokyo",
-  "Australia/Perth", "Australia/Sydney", "Australia/Melbourne", "Australia/Brisbane",
-  "Pacific/Auckland", "UTC"
-];
-
-function populateTimezones(selectedTz) {
-  const sel = document.getElementById("s-tz");
-  if (!sel) return;
-  sel.innerHTML = "";
-  const tzs = [...TIMEZONES];
-  if (selectedTz && !tzs.includes(selectedTz)) {
-    tzs.unshift(selectedTz);
-  }
-  for (const tz of tzs) {
-    const opt = document.createElement("option");
-    opt.value = tz;
-    opt.textContent = tz.replace(/_/g, " ");
-    if (tz === selectedTz) opt.selected = true;
-    sel.appendChild(opt);
-  }
-}
-
 async function openSettings() {
   try {
     const s = await api("/settings");
-    const currentTz = s.timezone || s.default_tz || "UTC";
-    populateTimezones(currentTz);
-    document.getElementById("s-snooze").checked = !!s.hide_snooze;
-    document.getElementById("settings-backdrop").classList.add("show");
+    const cur = s.timezone || s.default_tz || "UTC";
+    populateTimezones($("#s-tz"), cur);
+    $("#s-snooze").checked = !!s.hide_snooze;
+    showView("#settings-view");
   } catch (e) { toast(e.message, "err"); }
 }
-
 async function saveSettings() {
-  const tz = $("#s-tz").value.trim() || null;
+  const tz = $("#s-tz").value || null;
   const hide_snooze = $("#s-snooze").checked;
   try {
     await api("/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ timezone: tz, hide_snooze }) });
     toast("Settings saved");
-    $("#settings-backdrop").classList.remove("show");
+    showView("#list-view");
     loadList();
   } catch (e) { toast(e.message, "err"); }
 }
@@ -490,24 +606,28 @@ async function saveSettings() {
 // ---------------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------------
-
 $("#fab-create").addEventListener("click", openCreate);
-$("#btn-cancel-form").addEventListener("click", () => $("#form-backdrop").classList.remove("show"));
+$("#btn-back").addEventListener("click", () => { showView("#list-view"); loadList(); });
+$("#btn-cancel-form").addEventListener("click", () => { showView("#list-view"); loadList(); });
 $("#btn-save").addEventListener("click", saveForm);
 $("#btn-settings").addEventListener("click", openSettings);
-$("#btn-close-settings").addEventListener("click", () => $("#settings-backdrop").classList.remove("show"));
+$("#btn-back-settings").addEventListener("click", () => showView("#list-view"));
+$("#btn-close-settings").addEventListener("click", () => showView("#list-view"));
 $("#btn-save-settings").addEventListener("click", saveSettings);
 $("#btn-close").addEventListener("click", () => tg?.close?.());
-$("#add-schedule-row").addEventListener("click", addSchedule);
+$("#btn-close-form").addEventListener("click", () => { showView("#list-view"); loadList(); });
+$("#add-schedule").addEventListener("click", openSchedulePicker);
 $("#btn-close-sched").addEventListener("click", () => $("#sched-picker-backdrop").classList.remove("show"));
-$("#img-tile").addEventListener("click", () => $("#f-image-file").click());
-$("#f-image-file").addEventListener("change", (e) => {
-  onImagePicked(e.target.files[0]);
-  e.target.value = "";
+$("#mode-row").addEventListener("click", (e) => {
+  const btn = e.target.closest("button");
+  if (btn) switchMode(btn.dataset.mode);
 });
+$("#img-tile").addEventListener("click", () => $("#f-image-file").click());
+$("#f-image-file").addEventListener("change", (e) => { onImagePicked(e.target.files[0]); e.target.value = ""; });
 $("#img-remove").addEventListener("click", onImageRemoved);
 
-// deep link: #settings opens settings
-if (location.hash === "#settings") openSettings();
-
+// init
+populateTimezones($("#f-tz"), "UTC");
+populateTimezones($("#c-tz"), "UTC");
+switchMode("regular");
 loadList();

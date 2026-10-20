@@ -64,9 +64,8 @@ def utcnow() -> datetime:
 #   "daterange"    - fire at HH:MM every day while today is in [start, end]
 
 # Reminder kinds:
-#   "reminder"                - send and auto-complete
-#   "task"                    - send and wait for the user to mark done
-#   "task_no_notify"          - never send; just tracked in the list
+#   "reminder"   - regular reminder (send and auto-complete)
+#   "countdown"  - countdown to a target date/time (may pre-remind N days before)
 
 
 @dataclass
@@ -74,7 +73,7 @@ class Reminder:
     id: int
     user_id: int
     text: str
-    kind: str                      # reminder | task | task_no_notify
+    kind: str                      # reminder | countdown
     schedule_type: str             # once | every_day | interval | weekdays | monthdays | daterange
     # schedule params (only the relevant ones are set)
     at: str | None = None          # ISO datetime (once)
@@ -103,6 +102,14 @@ class Reminder:
     message_template: str | None = None
     # per-reminder note (free text, shown in /list and mini app)
     note: str | None = None
+    # free-form tags (UI adornment)
+    tags: list[str] = field(default_factory=list)
+    # countdown source params (kept so edits are lossless)
+    target_date: str | None = None        # "YYYY-MM-DD"
+    notification_time: str | None = None  # "HH:MM"
+    countdown_days_before: int | None = None
+    # group schedules that belong to the same logical reminder
+    group_id: int | None = None
 
     def to_dict(self) -> dict:
         return self.__dict__.copy()

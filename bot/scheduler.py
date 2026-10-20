@@ -266,7 +266,6 @@ class ReminderScheduler:
             await self.send_fn(r.user_id, r)
         except Exception:  # noqa: BLE001
             log.exception("Failed to send reminder #%s", rid)
-        # For task_no_notify we never send; just mark last_fire.
         # Reschedule for next fire (interval re-rolls its random delay here).
         self._reschedule_one(r, now)
         try:

@@ -41,9 +41,6 @@ async def send_reminder(user_id: int, r) -> None:
     """Send the reminder message (and optional image) to the user."""
     from bot.handlers import _fmt_next
 
-    if r.kind == "task_no_notify":
-        return  # silent task: never send
-
     app = STATE.ptb_app
     if app is None:
         log.warning("PTB app not ready, skipping send for #%s", r.id)
@@ -56,8 +53,8 @@ async def send_reminder(user_id: int, r) -> None:
         local_next = _fmt_next(r, tzname) if r.next_fire else ""
         if r.message_template:
             text = r.message_template.format(text=r.text, id=r.id, next=local_next)
-        elif r.kind == "task":
-            text = f"Task #{r.id}: {r.text}\nNext: {local_next}"
+        elif r.kind == "countdown":
+            text = f"⏳ Countdown #{r.id}: {r.text}\nNext: {local_next}"
         else:
             text = f"Reminder #{r.id}: {r.text}\nNext: {local_next}"
         # no reply_markup: reminders are plain text/photo messages, no buttons
@@ -74,10 +71,10 @@ async def send_reminder(user_id: int, r) -> None:
         local_next = _fmt_next(r, tzname) if r.next_fire else ""
         if r.message_template:
             text = r.message_template.format(text=r.text, id=r.id, next=local_next)
-        elif r.kind == "task":
-            text = f"Task #{r.id}: {r.text}\\nNext: {local_next}"
+        elif r.kind == "countdown":
+            text = f"⏳ Countdown #{r.id}: {r.text}\nNext: {local_next}"
         else:
-            text = f"Reminder #{r.id}: {r.text}\\nNext: {local_next}"
+            text = f"Reminder #{r.id}: {r.text}\nNext: {local_next}"
         if r.image_file_id:
             await bot.send_photo(user_id, r.image_file_id, caption=text)
         else:

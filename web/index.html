@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Skeddy</title>
+<title>Reminder Bot</title>
 <style>
   :root {
     --tg-bg: var(--tg-theme-bg-color, #14151a);
@@ -18,11 +18,13 @@
     --danger: #ff5d5d;
     --ok: #34c759;
     --radius: 14px;
+    --maxw: 520px;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; padding: 0; height: 100%; background: var(--tg-bg); color: var(--tg-text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  body { display: flex; flex-direction: column; }
+  body { display: flex; flex-direction: column; align-items: center; }
+  #app { width: 100%; max-width: var(--maxw); display: flex; flex-direction: column; min-height: 100vh; }
 
   header { display: flex; align-items: center; justify-content: space-between;
     padding: 14px 16px; background: var(--tg-bg); position: sticky; top: 0; z-index: 10; }
@@ -34,8 +36,17 @@
   .icon-btn { background: transparent; border: 0; color: var(--tg-hint); font-size: 21px;
     padding: 8px; border-radius: 10px; cursor: pointer; }
   .icon-btn:active { background: var(--tg-panel); }
+  .hdr-actions { display: flex; gap: 2px; }
 
-  main { flex: 1; overflow-y: auto; padding: 4px 16px calc(96px + env(safe-area-inset-bottom, 0px)); }
+  main { flex: 1; overflow-y: auto; padding: 4px 16px calc(110px + env(safe-area-inset-bottom, 0px)); }
+
+  /* Segmented control (Regular | Countdown / One time | Interval | Complex) */
+  .seg { display: flex; background: var(--tg-panel); border-radius: 12px; padding: 4px;
+    gap: 4px; }
+  .seg button { flex: 1; background: transparent; border: 0; color: var(--tg-hint);
+    padding: 10px; border-radius: 9px; font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: all .15s ease; }
+  .seg button.active { background: var(--accent); color: var(--tg-button-text); }
 
   .tabs { display: flex; background: var(--tg-panel); border-radius: 12px; padding: 4px;
     margin: 4px 0 14px; gap: 4px; }
@@ -55,7 +66,7 @@
   .card { background: var(--tg-panel); border-radius: var(--radius); padding: 14px;
     margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
   .card .top { display: flex; align-items: flex-start; gap: 10px; }
-  .card .chip { flex: 0 0 38px; height: 38px; border-radius: 11px; background: rgba(79,140,255,.14);
+  .card .chip { flex: 0 0 38px; height: 38px; border-radius: 11px; background: rgba(52,183,161,.14);
     display: flex; align-items: center; justify-content: center; font-size: 18px; }
   .card .body { flex: 1; min-width: 0; }
   .card .title { font-size: 15px; font-weight: 600; line-height: 1.35; word-wrap: break-word; }
@@ -64,8 +75,14 @@
   .badge { font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 6px;
     background: rgba(52,183,161,.15); color: var(--accent); text-transform: uppercase; letter-spacing: .4px; }
   .badge.muted { background: var(--tg-bg); color: var(--tg-hint); }
+  .card .sched-line { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .sched-pill { font-size: 11.5px; color: var(--tg-hint); background: var(--tg-bg);
+    border-radius: 7px; padding: 4px 8px; }
   .card .note { font-size: 12.5px; color: var(--tg-hint); margin-top: 6px;
     padding: 8px 10px; background: var(--tg-bg); border-radius: 9px; }
+  .tag-holder { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .tag-chip { font-size: 11.5px; color: var(--tg-text); background: rgba(79,140,255,.16);
+    padding: 3px 8px; border-radius: 7px; }
   .card .actions { display: flex; gap: 8px; margin-top: 12px; padding-top: 12px;
     border-top: 1px solid rgba(255,255,255,.06); align-items: center; flex-wrap: wrap; }
   .card .actions .spacer { flex: 1; }
@@ -74,12 +91,60 @@
   .card .actions button:active { background: var(--tg-bg); }
   .card .actions button.done { color: var(--ok); }
   .card .actions button.danger { color: var(--danger); }
+
   .fab { position: fixed; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); left: 50%;
     transform: translateX(-50%); background: var(--accent); color: var(--tg-button-text); font-weight: 700;
     border: 0; padding: 15px 34px; border-radius: 26px; font-size: 15px; cursor: pointer; z-index: 20;
     box-shadow: 0 10px 28px rgba(0,0,0,.35); }
 
-  /* bottom sheets */
+  /* Form view */
+  .view { display: none; flex-direction: column; min-height: 100vh; }
+  .view.show { display: flex; }
+  .view-head { padding: 8px 16px 10px; }
+  .view-head h2 { margin: 4px 0 18px; font-size: 22px; font-weight: 800; }
+  .view-body { flex: 1; padding: 0 16px calc(30px + env(safe-area-inset-bottom, 0px)); }
+  .form-bottom { position: sticky; bottom: 0; background: var(--tg-bg); padding: 12px 16px;
+    display: flex; gap: 10px; }
+  .form-bottom button { flex: 1; border: 0; padding: 15px; border-radius: 12px; font-size: 15px;
+    font-weight: 700; cursor: pointer; }
+  .form-bottom .primary { background: var(--accent); color: var(--tg-button-text); }
+  .form-bottom .ghost { background: var(--tg-panel); color: var(--tg-text); flex: 0 0 32%; }
+
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: var(--tg-hint); margin-bottom: 6px; font-weight: 600; }
+  .field input, .field textarea, .field select {
+    width: 100%; background: var(--tg-panel); color: var(--tg-text);
+    border: 1px solid transparent; border-radius: 11px; padding: 12px 14px; font-size: 14px;
+    font-family: inherit; resize: vertical; transition: border-color .15s ease; }
+  .field input:focus, .field textarea:focus, .field select:focus { outline: none; border-color: var(--accent-2); }
+  .field textarea { min-height: 74px; }
+  .row2 { display: flex; gap: 10px; }
+  .row2 .field { flex: 1; }
+
+  .section-title { font-size: 12.5px; color: var(--accent-2); margin: 20px 0 8px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .5px; }
+
+  .tags-wrap { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .chip-add { background: transparent; border: 1px dashed var(--tg-hint); color: var(--tg-hint);
+    border-radius: 8px; padding: 6px 12px; font-size: 12.5px; cursor: pointer; }
+  .chip { background: var(--tg-panel); border-radius: 8px; padding: 6px 12px; font-size: 12.5px;
+    font-weight: 600; color: var(--tg-text); display: flex; gap: 6px; align-items: center; }
+  .chip .x { cursor: pointer; color: var(--tg-hint); }
+  #tag-input { display: none; flex: 1; min-width: 120px; }
+
+  /* Schedule rows in form */
+  .sched-item { display: flex; align-items: center; justify-content: space-between;
+    background: var(--tg-panel); border-radius: 11px; padding: 12px; margin-bottom: 8px; }
+  .sched-item .label { font-size: 13.5px; }
+  .sched-item .label .sub { color: var(--tg-hint); font-size: 12px; margin-top: 2px; }
+  .sched-item .badge { font-size: 10.5px; }
+  .sched-item .actions { display: flex; gap: 6px; }
+  .sched-item .icon-btn { font-size: 16px; padding: 6px; }
+
+  .add-sched { background: transparent; border: 1px dashed var(--tg-hint); color: var(--tg-hint);
+    border-radius: 11px; padding: 12px; font-size: 14px; font-weight: 600; width: 100%; cursor: pointer; }
+
+  /* modal sheets */
   .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 30;
     display: none; align-items: flex-end; justify-content: center; }
   .modal-backdrop.show { display: flex; }
@@ -92,46 +157,7 @@
     opacity: .4; margin: 0 auto 12px; }
   .modal h3 { margin: 4px 0 16px; font-size: 17px; font-weight: 700; }
 
-  .field { margin-bottom: 14px; }
-  .field label { display: block; font-size: 12px; color: var(--tg-hint); margin-bottom: 6px; font-weight: 600; }
-  .field input, .field textarea, .field select {
-    width: 100%; background: var(--tg-panel); color: var(--tg-text);
-    border: 1px solid transparent; border-radius: 11px; padding: 12px; font-size: 14px;
-    font-family: inherit; resize: vertical; transition: border-color .15s ease; }
-  .field input:focus, .field textarea:focus { outline: none; border-color: var(--accent-2); }
-  .field textarea { min-height: 74px; }
-
-  .section-title { font-size: 12.5px; color: var(--accent-2); margin: 20px 0 8px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: .5px; }
-
-  .schedule-row { display: flex; align-items: center; justify-content: space-between;
-    background: var(--tg-panel); border-radius: 11px; padding: 12px; margin-bottom: 8px; }
-  .schedule-row .label { font-size: 13.5px; }
-  .schedule-row .label .sub { color: var(--tg-hint); font-size: 12px; margin-top: 2px; }
-
-  .kind-row { display: flex; flex-direction: column; gap: 8px; }
-  .kind-row label { display: flex; gap: 10px; align-items: flex-start; background: var(--tg-panel);
-    border-radius: 11px; padding: 11px 12px; cursor: pointer; margin: 0;
-    border: 1px solid transparent; }
-  .kind-row label.on { border-color: var(--accent-2); }
-  .kind-row input { margin-top: 3px; accent-color: var(--accent-2); }
-  .kind-row .t { font-size: 14px; font-weight: 600; }
-  .kind-row .s { font-size: 12px; color: var(--tg-hint); margin-top: 2px; }
-  /* image upload tile */
-  .img-tile { border: 1.5px dashed var(--tg-hint); border-radius: 12px; padding: 18px;
-    text-align: center; color: var(--tg-hint); font-size: 13px; cursor: pointer; }
-  .img-preview { position: relative; margin-top: 10px; display: none; }
-  .img-preview img { width: 100%; max-height: 200px; object-fit: cover; border-radius: 12px; display: block; }
-  .img-preview .rm { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,.6);
-    color: #fff; border: 0; width: 28px; height: 28px; border-radius: 50%; font-size: 14px; cursor: pointer; }
-  .img-error { color: var(--danger); font-size: 12px; margin-top: 6px; }
-
-  .save-bar { display: flex; gap: 10px; margin-top: 20px; }
-  .save-bar button { flex: 1; border: 0; padding: 14px; border-radius: 12px; font-size: 15px;
-    font-weight: 700; cursor: pointer; }
-  .save-bar .primary { background: var(--accent); color: var(--tg-button-text); }
-  .save-bar .ghost { background: var(--tg-panel); color: var(--tg-text); flex: 0 0 34%; }
-
+  /* schedule type picker */
   .option { display: flex; justify-content: space-between; align-items: center;
     padding: 13px 10px; border-radius: 11px; cursor: pointer; }
   .option:active { background: var(--tg-panel); }
@@ -144,6 +170,20 @@
     font-weight: 600; color: var(--tg-hint); cursor: pointer; user-select: none; }
   .pill.active { background: var(--accent-2); color: #fff; }
 
+  .modal-foot { display: flex; gap: 10px; margin-top: 16px; }
+  .modal-foot button { flex: 1; border: 0; padding: 14px; border-radius: 12px; font-size: 15px;
+    font-weight: 700; cursor: pointer; }
+  .modal-foot .primary { background: var(--accent); color: var(--tg-button-text); }
+  .modal-foot .ghost { background: var(--tg-panel); color: var(--tg-text); flex: 0 0 32%; }
+
+  .img-tile { border: 1.5px dashed var(--tg-hint); border-radius: 12px; padding: 18px;
+    text-align: center; color: var(--tg-hint); font-size: 13px; cursor: pointer; }
+  .img-preview { position: relative; margin-top: 10px; display: none; }
+  .img-preview img { width: 100%; max-height: 200px; object-fit: cover; border-radius: 12px; display: block; }
+  .img-preview .rm { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,.6);
+    color: #fff; border: 0; width: 28px; height: 28px; border-radius: 50%; font-size: 14px; cursor: pointer; }
+  .img-error { color: var(--danger); font-size: 12px; margin-top: 6px; }
+
   .toast { position: fixed; left: 50%; transform: translateX(-50%) translateY(20px); bottom: 90px;
     background: var(--tg-panel); color: var(--tg-text); padding: 11px 18px; border-radius: 12px;
     font-size: 13.5px; opacity: 0; pointer-events: none; transition: all .25s ease; z-index: 50;
@@ -153,42 +193,82 @@
 </style>
 </head>
 <body>
-  <header>
-    <div class="brand">
-      <div class="logo">S</div>
-      <h1>Skeddy</h1>
-    </div>
-    <div>
-      <button class="icon-btn" id="btn-settings" title="Settings">&#9881;&#65039;</button>
-      <button class="icon-btn" id="btn-close" title="Close">&#10005;</button>
-    </div>
-  </header>
-  <main id="main"></main>
-  <button class="fab" id="fab-create">+ Create</button>
+<div id="app">
+  <!-- List view -->
+  <div class="view show" id="list-view">
+    <header>
+      <div class="brand"><div class="logo">R</div><h1>Reminder Bot</h1></div>
+      <div class="hdr-actions">
+        <button class="icon-btn" id="btn-settings" title="Settings">&#9881;&#65039;</button>
+        <button class="icon-btn" id="btn-close" title="Close">&#10005;</button>
+      </div>
+    </header>
+    <main id="main"></main>
+    <button class="fab" id="fab-create">+ Create</button>
+  </div>
 
-  <!-- Create / Edit sheet -->
-  <div class="modal-backdrop" id="form-backdrop">
-    <div class="modal" id="form-modal">
-      <div class="grabber"></div>
-      <h3 id="form-title">New reminder</h3>
-      <div class="field">
-        <label>What do you want to be reminded about?</label>
-        <textarea id="f-text" placeholder="e.g. stretch my legs"></textarea>
+  <!-- Form view (create / edit) -->
+  <div class="view" id="form-view">
+    <header>
+      <div class="brand"><button class="icon-btn" id="btn-back">&#8592;</button><h1 id="form-head-title">Create Reminder</h1></div>
+      <div class="hdr-actions">
+        <button class="icon-btn" id="btn-close-form">&#10005;</button>
+      </div>
+    </header>
+    <div class="view-body">
+      <div class="seg" id="mode-row" style="margin:6px 0 18px;">
+        <button class="active" data-mode="regular">Regular</button>
+        <button data-mode="countdown">&#9203; Countdown</button>
       </div>
 
-      <div class="section-title">Main Settings</div>
-      <div id="schedule-list"></div>
-      <div class="schedule-row" id="add-schedule-row" style="justify-content:flex-start; gap:8px;">
-        <span style="color:var(--accent-2); font-weight:700;">+</span>
-        <span>Add a schedule</span>
+      <div id="regular-fields">
+        <div class="field">
+          <label>Reminder text</label>
+          <textarea id="f-text" placeholder="Enter reminder text"></textarea>
+        </div>
+        <div class="field">
+          <label>Timezone</label>
+          <select id="f-tz"></select>
+        </div>
+        <div class="field">
+          <label>Tags</label>
+          <div class="tags-wrap" id="tag-wrap">
+            <button class="chip-add" id="add-tag">+ Add tag</button>
+            <input id="tag-input" placeholder="Type a tag and press Enter"/>
+          </div>
+        </div>
+        <div class="section-title">Schedules</div>
+        <div id="schedule-list"></div>
+        <button class="add-sched" id="add-schedule">+ Add Schedule</button>
       </div>
 
-      <div class="field" style="margin-top:16px;">
-        <label>Type</label>
-        <div class="kind-row" id="kind-row">
-          <label><input type="radio" name="kind" value="reminder"/> <div><div class="t">Reminder</div><div class="s">I send it and complete it for you</div></div></label>
-          <label><input type="radio" name="kind" value="task" checked/> <div><div class="t">Task</div><div class="s">I send it and it waits for you to complete it</div></div></label>
-          <label><input type="radio" name="kind" value="task_no_notify"/> <div><div class="t">Task with no notifications</div><div class="s">I don't send it; it waits for you to complete it</div></div></label>
+      <div id="countdown-fields" style="display:none;">
+        <div class="field">
+          <label>Reminder text</label>
+          <textarea id="c-text" placeholder="Enter reminder text"></textarea>
+        </div>
+        <div class="field">
+          <label>Timezone</label>
+          <select id="c-tz"></select>
+        </div>
+        <div class="field">
+          <label>Tags</label>
+          <div class="tags-wrap" id="c-tag-wrap">
+            <button class="chip-add" id="c-add-tag">+ Add tag</button>
+            <input id="c-tag-input" placeholder="Type a tag and press Enter"/>
+          </div>
+        </div>
+        <div class="field">
+          <label>Target date</label>
+          <input id="c-date" type="date"/>
+        </div>
+        <div class="field">
+          <label>Notification time</label>
+          <input id="c-time" type="time"/>
+        </div>
+        <div class="field">
+          <label>Days before target to start</label>
+          <input id="c-days" type="number" min="0" placeholder="e.g. 3"/>
         </div>
       </div>
 
@@ -196,12 +276,10 @@
         <label>Note (optional)</label>
         <input id="f-note" placeholder="Optional note"/>
       </div>
-
       <div class="field">
         <label>Custom message template (optional)</label>
         <input id="f-template" placeholder="e.g. Time to {text}! (next in {next})"/>
       </div>
-
       <div class="field">
         <label>Image (optional)</label>
         <div class="img-tile" id="img-tile">&#128247; Tap to upload an image<br/><span style="font-size:11px">JPEG, PNG or WebP, up to 5 MB</span></div>
@@ -212,49 +290,59 @@
         </div>
         <div class="img-error" id="img-error"></div>
       </div>
-
-      <div class="save-bar">
-        <button class="ghost" id="btn-cancel-form">Cancel</button>
-        <button class="primary" id="btn-save">Save</button>
-      </div>
+    </div>
+    <div class="form-bottom">
+      <button class="ghost" id="btn-cancel-form">Cancel</button>
+      <button class="primary" id="btn-save">Save</button>
     </div>
   </div>
 
-  <!-- Settings sheet -->
-  <div class="modal-backdrop" id="settings-backdrop">
-    <div class="modal" id="settings-modal">
-      <div class="grabber"></div>
-      <h3>Settings</h3>
-      <div class="field">
-        <label>Timezone</label>
-        <select id="s-tz"></select>
-      </div>
-      <div class="field">
-        <label><input type="checkbox" id="s-snooze"/> Hide snooze buttons</label>
-      </div>
-      <div class="save-bar">
-        <button class="ghost" id="btn-close-settings">Close</button>
-        <button class="primary" id="btn-save-settings">Save</button>
-      </div>
+  <!-- Settings view -->
+  <div class="view" id="settings-view">
+    <header>
+      <div class="brand"><button class="icon-btn" id="btn-back-settings">&#8592;</button><h1>Settings</h1></div>
+    </header>
+    <div class="view-body">
+      <div class="field"><label>Timezone</label><select id="s-tz"></select></div>
+      <div class="field"><label><input type="checkbox" id="s-snooze"/> Hide snooze buttons</label></div>
+    </div>
+    <div class="form-bottom">
+      <button class="ghost" id="btn-close-settings">Close</button>
+      <button class="primary" id="btn-save-settings">Save</button>
     </div>
   </div>
 
-  <!-- Schedule picker sheet -->
+  <!-- Schedule type picker sheet -->
   <div class="modal-backdrop" id="sched-picker-backdrop">
     <div class="modal">
       <div class="grabber"></div>
-      <h3>Pick a schedule</h3>
+      <h3>Add Schedule</h3>
       <div id="sched-options"></div>
-      <div class="save-bar">
-        <button class="ghost" id="btn-close-sched">Cancel</button>
+      <div class="modal-foot"><button class="ghost" id="btn-close-sched">Cancel</button></div>
+    </div>
+  </div>
+
+  <!-- Schedule editor sheet -->
+  <div class="modal-backdrop" id="sched-editor-backdrop">
+    <div class="modal">
+      <div class="grabber"></div>
+      <h3 id="sched-editor-title">Schedule</h3>
+      <div class="seg" id="sched-type-row" style="margin-bottom:16px;">
+        <button class="active" data-type="once">One time</button>
+        <button data-type="interval">Interval</button>
+        <button data-type="complex">Complex</button>
+      </div>
+      <div id="sched-editor-fields"></div>
+      <div class="modal-foot">
+        <button class="ghost" id="sched-cancel">Cancel</button>
+        <button class="primary" id="sched-ok">OK</button>
       </div>
     </div>
   </div>
 
   <div class="toast" id="toast"></div>
-
+</div>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="app.js"></script>
-<script src="app.debug.js"></script>
 </body>
 </html>
