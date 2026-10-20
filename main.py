@@ -22,7 +22,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from telegram import Bot
+from telegram import Bot, MenuButtonWebApp, WebAppInfo
 from telegram.ext import Application
 
 from bot import handlers, miniapp_api
@@ -53,6 +53,24 @@ async def send_reminder(user_id: int, r) -> None:
     try:
         us = STATE.vault.db.user(user_id)
         tzname = us.timezone or STATE.settings.default_tz
+        local_next = _fmt_next(r, tzname) if r.next_fire else ""
+        if r.message_template:
+            text = r.message_template.format(text=r.text, id=r.id, next=local_next)
+        elif r.kind == "task":
+            text = f"Task #{r.id}: {r.text}\nNext: {local_next}"
+        else:
+            text = f"Reminder #{r.id}: {r.text}\nNext: {local_next}"
+        # no reply_markup: reminders are plain text/photo messages, no buttons
+        image_data = await STATE.vault.get_image(r.image_id)
+        if image_data is None and r.image_file_id:
+            # legacy reminders created before image uploads used raw file_ids
+            await bot.send_photo(user_id, r.image_file_id, caption=text)
+        elif image_data is not None:
+            await bot.send_photo(user_id, image_data, caption=text)
+        else:
+            await bot.send_message(user_id, text)
+    except Exception:  # noqa: BLE001
+        log.exception("Failed to send reminder #%s to user %s", r.id, user_id)
         local_next = _fmt_next(r, tzname) if r.next_fire else ""
         if r.message_template:
             text = r.message_template.format(text=r.text, id=r.id, next=local_next)
@@ -99,6 +117,16 @@ async def start_bot(settings: Settings, vault: Vault, scheduler: ReminderSchedul
         await ptb_app.bot.set_my_commands(handlers.BOT_COMMANDS)
     except Exception as exc:  # noqa: BLE001
         log.warning("Could not set commands: %s", exc)
+    mini_app_url = os.getenv("MINI_APP_URL", "").strip()
+    if mini_app_url:
+        try:
+            await ptb_app.bot.set_chat_menu_button(
+                menu_button=MenuButtonWebApp(
+                    text="Mini App", web_app=WebAppInfo(url=mini_app_url)
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Could not set menu button: %s", exc)
 
     async def post_init(app: Application) -> None:
         log.info("Post-init: starting scheduler")

@@ -16,17 +16,19 @@ import json
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from telegram.ext import Application
 
 from .config import Reminder, Settings, utcnow
 from .handlers import _fmt_next, _render_reminder_line
 from .scheduler import ReminderScheduler, compute_next_fire
-from .storage import Vault
+from .storage import MAX_IMAGE_BYTES, Vault
 
 router = APIRouter(prefix="/api")
+
+
 
 
 class AppState:
@@ -54,6 +56,11 @@ class ReminderIn(BaseModel):
     text: str = Field(min_length=1, max_length=500)
     kind: str = "reminder"  # reminder | task | task_no_notify
     schedule_type: str = "interval"  # once|every_day|interval|weekdays|monthdays|daterange
+    tz: str = "UTC"
+    image_id: str | None = None
+    image_file_id: str | None = None  # legacy (pre-upload) field
+    message_template: str | None = None
+    note: str | None = None
     at: str | None = None
     time_of_day: str | None = None
     min_seconds: float | None = None
@@ -62,10 +69,6 @@ class ReminderIn(BaseModel):
     monthdays: list[int] = Field(default_factory=list)
     range_start: str | None = None
     range_end: str | None = None
-    tz: str = "UTC"
-    image_file_id: str | None = None
-    message_template: str | None = None
-    note: str | None = None
 
 
 class UserSettingsIn(BaseModel):
@@ -142,6 +145,7 @@ async def create_reminder(body: ReminderIn, user_id: int = Depends(_user_id_from
         range_start=body.range_start,
         range_end=body.range_end,
         tz=body.tz or us_tz(user_id),
+        image_id=body.image_id,
         image_file_id=body.image_file_id,
         message_template=body.message_template,
         note=body.note,
@@ -171,6 +175,7 @@ async def update_reminder(rid: int, body: ReminderIn, user_id: int = Depends(_us
     r.range_start = body.range_start
     r.range_end = body.range_end
     r.tz = body.tz or r.tz
+    r.image_id = body.image_id
     r.image_file_id = body.image_file_id
     r.message_template = body.message_template
     r.note = body.note
@@ -246,3 +251,49 @@ async def put_settings(body: UserSettingsIn, user_id: int = Depends(_user_id_fro
         us.language = body.language
     await STATE.vault.save()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Images (uploaded from the mini app; stored via the vault, see storage.py)
+# ---------------------------------------------------------------------------
+
+@router.post("/images", status_code=201)
+async def upload_image(file: UploadFile = File(...), user_id: int = Depends(_user_id_from_query)):
+    if STATE.vault is None:
+        raise HTTPException(503, "not ready")
+    if not STATE.vault.db.user(user_id).verified:
+        raise HTTPException(401, "not verified")
+    if (file.content_type or "") not in ("image/jpeg", "image/png", "image/webp"):
+        raise HTTPException(415, "only JPEG, PNG or WebP images are supported")
+    data = await file.read()
+    if len(data) > MAX_IMAGE_BYTES:
+        raise HTTPException(413, "image too large (max 5 MB)")
+    try:
+        image_id = await STATE.vault.put_image(data)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(500, f"could not store image: {exc}")
+    return {"image_id": image_id, "url": f"/api/images/{image_id}"}
+
+
+@router.get("/images/{image_id}")
+async def get_image(image_id: str, user_id: int = Depends(_user_id_from_query)):
+    if STATE.vault is None:
+        raise HTTPException(503, "not ready")
+    data = await STATE.vault.get_image(image_id)
+    if data is None:
+        raise HTTPException(404, "image not found")
+    return Response(content=data, media_type="image/jpeg")
+
+
+@router.delete("/images/{image_id}")
+async def delete_image(image_id: str, user_id: int = Depends(_user_id_from_query)):
+    if STATE.vault is None:
+        raise HTTPException(503, "not ready")
+    await STATE.vault.delete_image(image_id)
+    return {"ok": True}
+
+
+# PUT alias for PATCH /reminders/{rid} (the mini app uses PUT)
+@router.put("/reminders/{rid}")
+async def update_reminder_put(rid: int, body: ReminderIn, user_id: int = Depends(_user_id_from_query)):
+    return await update_reminder(rid, body, user_id)

@@ -90,6 +90,10 @@ class Reminder:
     created_at: str = field(default_factory=lambda: utcnow().isoformat())
     last_fire: str | None = None
     completed: bool = False
+    # optional image to send with the reminder (uploaded image, Vault-stored)
+    image_id: str | None = None
+    # legacy field kept so old vault data still loads (Telegram photo file_id)
+    image_file_id: str | None = None
     # optional image to send with the reminder (Telegram photo file_id)
     image_file_id: str | None = None
     # customizable message template. Placeholders:

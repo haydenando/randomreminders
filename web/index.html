@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
@@ -6,127 +6,170 @@
 <title>Skeddy</title>
 <style>
   :root {
-    --bg: #0e0f13;
-    --panel: #1a1c23;
-    --panel-2: #23262f;
-    --text: #e8e9ec;
-    --muted: #8a8d97;
-    --accent: #34b7a1;
-    --accent-2: #4f8cff;
+    --tg-bg: var(--tg-theme-bg-color, #14151a);
+    --tg-panel: var(--tg-theme-secondary-bg-color, #1c1e26);
+    --tg-text: var(--tg-theme-text-color, #e8e9ec);
+    --tg-hint: var(--tg-theme-hint-color, #8a8d97);
+    --tg-link: var(--tg-theme-link-color, #4f8cff);
+    --tg-button: var(--tg-theme-button-color, #34b7a1);
+    --tg-button-text: var(--tg-theme-button-text-color, #06281f);
+    --accent: var(--tg-button);
+    --accent-2: var(--tg-link);
     --danger: #ff5d5d;
     --ok: #34c759;
-    --warn: #ffb020;
+    --radius: 14px;
   }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text);
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--tg-bg); color: var(--tg-text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
   body { display: flex; flex-direction: column; }
-  header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 16px; background: var(--panel);
-    position: sticky; top: 0; z-index: 10;
-  }
-  header h1 { font-size: 18px; margin: 0; font-weight: 600; }
-  .icon-btn { background: transparent; border: 0; color: var(--muted); font-size: 20px; padding: 6px; }
-  main { flex: 1; overflow-y: auto; padding: 16px; }
-  .tabs {
-    display: flex; background: var(--panel-2); border-radius: 10px; padding: 4px;
-    margin-bottom: 16px; gap: 4px;
-  }
-  .tabs button {
-    flex: 1; background: transparent; border: 0; color: var(--muted);
-    padding: 10px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;
-  }
-  .tabs button.active { background: #2d3040; color: var(--text); }
-  .empty {
-    background: var(--panel); border-radius: 10px; padding: 16px; color: var(--muted);
-    font-size: 14px; text-align: center; margin: 24px 0;
-  }
-  .card {
-    background: var(--panel); border-radius: 12px; padding: 14px;
-    margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px;
-  }
-  .card .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-  .card .title { font-size: 15px; font-weight: 500; }
-  .card .meta { font-size: 12px; color: var(--muted); }
-  .card .badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; background: var(--panel-2); color: var(--muted); }
-  .card .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
-  .card button { background: var(--panel-2); border: 0; color: var(--text); padding: 6px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; }
-  .card button.danger { color: var(--danger); }
-  .card button.primary { background: var(--accent); color: #06281f; font-weight: 600; }
-  .fab {
-    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-    background: var(--accent); color: #06281f; font-weight: 600;
-    border: 0; padding: 14px 28px; border-radius: 24px; font-size: 15px; cursor: pointer;
-    box-shadow: 0 8px 24px rgba(52, 183, 161, 0.35);
-  }
-  /* form */
-  .field { margin-bottom: 14px; }
-  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; font-weight: 500; }
-  .field input, .field textarea, .field select {
-    width: 100%; background: var(--panel-2); color: var(--text);
-    border: 1px solid #2d3040; border-radius: 8px; padding: 10px; font-size: 14px;
-    font-family: inherit; resize: vertical;
-  }
-  .field textarea { min-height: 72px; }
-  .section-title { font-size: 13px; color: var(--accent-2); margin: 18px 0 8px; font-weight: 600; }
-  .schedule-row {
-    display: flex; align-items: center; justify-content: space-between;
-    background: var(--panel-2); border-radius: 8px; padding: 12px; margin-bottom: 8px;
-  }
-  .schedule-row .label { font-size: 14px; font-weight: 500; }
-  .schedule-row .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
-  .chev { color: var(--muted); }
-  .pill-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
-  .pill {
-    background: var(--panel-2); border: 1px solid #2d3040; color: var(--text);
-    padding: 6px 10px; border-radius: 16px; font-size: 12px; cursor: pointer;
-  }
-  .pill.active { background: var(--accent); color: #06281f; border-color: var(--accent); font-weight: 600; }
-  .kind-row { display: flex; flex-direction: column; gap: 6px; }
-  .kind-row label { display: flex; gap: 10px; align-items: flex-start; background: var(--panel-2); padding: 10px; border-radius: 8px; cursor: pointer; }
-  .kind-row input { margin-top: 3px; }
-  .kind-row .t { font-size: 14px; font-weight: 500; }
-  .kind-row .s { font-size: 12px; color: var(--muted); margin-top: 2px; }
-  .save-bar {
-    position: sticky; bottom: 0; background: var(--bg); padding: 12px 16px 20px;
-    display: flex; gap: 8px;
-  }
-  .save-bar button {
-    flex: 1; padding: 14px; border-radius: 12px; border: 0; font-size: 15px; font-weight: 600; cursor: pointer;
-  }
-  .save-bar .primary { background: var(--accent); color: #06281f; }
-  .save-bar .ghost { background: var(--panel-2); color: var(--text); }
-  .toast { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
-    background: var(--panel-2); padding: 10px 16px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
-  .toast.show { opacity: 1; }
-  .toast.err { background: var(--danger); color: white; }
-  .toast.ok { background: var(--ok); color: white; }
-  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 20; }
+
+  header { display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px; background: var(--tg-bg); position: sticky; top: 0; z-index: 10; }
+  header .brand { display: flex; align-items: center; gap: 10px; }
+  header .logo { width: 34px; height: 34px; border-radius: 10px; background: var(--accent);
+    color: var(--tg-button-text); display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 17px; }
+  header h1 { font-size: 18px; margin: 0; font-weight: 700; letter-spacing: .2px; }
+  .icon-btn { background: transparent; border: 0; color: var(--tg-hint); font-size: 21px;
+    padding: 8px; border-radius: 10px; cursor: pointer; }
+  .icon-btn:active { background: var(--tg-panel); }
+
+  main { flex: 1; overflow-y: auto; padding: 4px 16px calc(96px + env(safe-area-inset-bottom, 0px)); }
+
+  .tabs { display: flex; background: var(--tg-panel); border-radius: 12px; padding: 4px;
+    margin: 4px 0 14px; gap: 4px; }
+  .tabs button { flex: 1; background: transparent; border: 0; color: var(--tg-hint);
+    padding: 9px; border-radius: 9px; font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: all .15s ease; }
+  .tabs button.active { background: var(--accent); color: var(--tg-button-text); }
+
+  .empty { border: 1.5px dashed var(--tg-hint); border-radius: var(--radius); padding: 26px 16px;
+    color: var(--tg-hint); font-size: 14px; text-align: center; margin: 32px 8px; line-height: 1.6; }
+  .empty .big { font-size: 34px; display: block; margin-bottom: 8px; }
+
+  .skeleton { height: 84px; border-radius: var(--radius); background: var(--tg-panel);
+    margin-bottom: 10px; opacity: .6; animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+
+  .card { background: var(--tg-panel); border-radius: var(--radius); padding: 14px;
+    margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
+  .card .top { display: flex; align-items: flex-start; gap: 10px; }
+  .card .chip { flex: 0 0 38px; height: 38px; border-radius: 11px; background: rgba(79,140,255,.14);
+    display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  .card .body { flex: 1; min-width: 0; }
+  .card .title { font-size: 15px; font-weight: 600; line-height: 1.35; word-wrap: break-word; }
+  .card .meta { font-size: 12.5px; color: var(--tg-hint); margin-top: 4px; line-height: 1.5; }
+  .card .right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .badge { font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 6px;
+    background: rgba(52,183,161,.15); color: var(--accent); text-transform: uppercase; letter-spacing: .4px; }
+  .badge.muted { background: var(--tg-bg); color: var(--tg-hint); }
+  .card .note { font-size: 12.5px; color: var(--tg-hint); margin-top: 6px;
+    padding: 8px 10px; background: var(--tg-bg); border-radius: 9px; }
+  .card .actions { display: flex; gap: 8px; margin-top: 12px; padding-top: 12px;
+    border-top: 1px solid rgba(255,255,255,.06); align-items: center; flex-wrap: wrap; }
+  .card .actions .spacer { flex: 1; }
+  .card .actions button { background: transparent; border: 0; color: var(--tg-hint);
+    padding: 6px 10px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .card .actions button:active { background: var(--tg-bg); }
+  .card .actions button.done { color: var(--ok); }
+  .card .actions button.danger { color: var(--danger); }
+  .fab { position: fixed; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); left: 50%;
+    transform: translateX(-50%); background: var(--accent); color: var(--tg-button-text); font-weight: 700;
+    border: 0; padding: 15px 34px; border-radius: 26px; font-size: 15px; cursor: pointer; z-index: 20;
+    box-shadow: 0 10px 28px rgba(0,0,0,.35); }
+
+  /* bottom sheets */
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 30;
+    display: none; align-items: flex-end; justify-content: center; }
   .modal-backdrop.show { display: flex; }
-  .modal { background: var(--panel); border-radius: 14px; padding: 20px; width: 90%; max-width: 420px; max-height: 80vh; overflow-y: auto; }
-  .modal h3 { margin: 0 0 12px; font-size: 16px; }
-  .modal .option { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--panel-2); border-radius: 8px; margin-bottom: 6px; cursor: pointer; }
-  .modal .option.active { outline: 2px solid var(--accent); }
-  .hidden { display: none !important; }
-  .switch { display: flex; align-items: center; gap: 8px; }
-  .switch input { width: 18px; height: 18px; }
+  .modal { background: var(--tg-bg); width: 100%; max-width: 560px; max-height: 88vh;
+    overflow-y: auto; border-radius: 20px 20px 0 0;
+    padding: 12px 18px calc(24px + env(safe-area-inset-bottom, 0px));
+    animation: slideup .22s ease; }
+  @keyframes slideup { from { transform: translateY(40px); opacity: .4; } }
+  .grabber { width: 40px; height: 4px; border-radius: 3px; background: var(--tg-hint);
+    opacity: .4; margin: 0 auto 12px; }
+  .modal h3 { margin: 4px 0 16px; font-size: 17px; font-weight: 700; }
+
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: var(--tg-hint); margin-bottom: 6px; font-weight: 600; }
+  .field input, .field textarea, .field select {
+    width: 100%; background: var(--tg-panel); color: var(--tg-text);
+    border: 1px solid transparent; border-radius: 11px; padding: 12px; font-size: 14px;
+    font-family: inherit; resize: vertical; transition: border-color .15s ease; }
+  .field input:focus, .field textarea:focus { outline: none; border-color: var(--accent-2); }
+  .field textarea { min-height: 74px; }
+
+  .section-title { font-size: 12.5px; color: var(--accent-2); margin: 20px 0 8px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .5px; }
+
+  .schedule-row { display: flex; align-items: center; justify-content: space-between;
+    background: var(--tg-panel); border-radius: 11px; padding: 12px; margin-bottom: 8px; }
+  .schedule-row .label { font-size: 13.5px; }
+  .schedule-row .label .sub { color: var(--tg-hint); font-size: 12px; margin-top: 2px; }
+
+  .kind-row { display: flex; flex-direction: column; gap: 8px; }
+  .kind-row label { display: flex; gap: 10px; align-items: flex-start; background: var(--tg-panel);
+    border-radius: 11px; padding: 11px 12px; cursor: pointer; margin: 0;
+    border: 1px solid transparent; }
+  .kind-row label.on { border-color: var(--accent-2); }
+  .kind-row input { margin-top: 3px; accent-color: var(--accent-2); }
+  .kind-row .t { font-size: 14px; font-weight: 600; }
+  .kind-row .s { font-size: 12px; color: var(--tg-hint); margin-top: 2px; }
+  /* image upload tile */
+  .img-tile { border: 1.5px dashed var(--tg-hint); border-radius: 12px; padding: 18px;
+    text-align: center; color: var(--tg-hint); font-size: 13px; cursor: pointer; }
+  .img-preview { position: relative; margin-top: 10px; display: none; }
+  .img-preview img { width: 100%; max-height: 200px; object-fit: cover; border-radius: 12px; display: block; }
+  .img-preview .rm { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,.6);
+    color: #fff; border: 0; width: 28px; height: 28px; border-radius: 50%; font-size: 14px; cursor: pointer; }
+  .img-error { color: var(--danger); font-size: 12px; margin-top: 6px; }
+
+  .save-bar { display: flex; gap: 10px; margin-top: 20px; }
+  .save-bar button { flex: 1; border: 0; padding: 14px; border-radius: 12px; font-size: 15px;
+    font-weight: 700; cursor: pointer; }
+  .save-bar .primary { background: var(--accent); color: var(--tg-button-text); }
+  .save-bar .ghost { background: var(--tg-panel); color: var(--tg-text); flex: 0 0 34%; }
+
+  .option { display: flex; justify-content: space-between; align-items: center;
+    padding: 13px 10px; border-radius: 11px; cursor: pointer; }
+  .option:active { background: var(--tg-panel); }
+  .option .t { font-size: 14.5px; font-weight: 600; }
+  .option .s { font-size: 12px; color: var(--tg-hint); margin-top: 2px; }
+  .option .chev { color: var(--tg-hint); font-size: 20px; }
+
+  .pill-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pill { background: var(--tg-panel); border-radius: 8px; padding: 7px 11px; font-size: 12.5px;
+    font-weight: 600; color: var(--tg-hint); cursor: pointer; user-select: none; }
+  .pill.active { background: var(--accent-2); color: #fff; }
+
+  .toast { position: fixed; left: 50%; transform: translateX(-50%) translateY(20px); bottom: 90px;
+    background: var(--tg-panel); color: var(--tg-text); padding: 11px 18px; border-radius: 12px;
+    font-size: 13.5px; opacity: 0; pointer-events: none; transition: all .25s ease; z-index: 50;
+    box-shadow: 0 6px 20px rgba(0,0,0,.35); max-width: 86%; text-align: center; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.err { border-left: 3px solid var(--danger); }
 </style>
 </head>
 <body>
   <header>
-    <h1>Skeddy</h1>
-    <div style="display:flex; gap:4px;">
-      <button class="icon-btn" id="btn-settings" title="Settings">&#8942;</button>
+    <div class="brand">
+      <div class="logo">S</div>
+      <h1>Skeddy</h1>
+    </div>
+    <div>
+      <button class="icon-btn" id="btn-settings" title="Settings">&#9881;&#65039;</button>
       <button class="icon-btn" id="btn-close" title="Close">&#10005;</button>
     </div>
   </header>
   <main id="main"></main>
   <button class="fab" id="fab-create">+ Create</button>
 
-  <!-- Create / Edit form -->
+  <!-- Create / Edit sheet -->
   <div class="modal-backdrop" id="form-backdrop">
     <div class="modal" id="form-modal">
+      <div class="grabber"></div>
       <h3 id="form-title">New reminder</h3>
       <div class="field">
         <label>What do you want to be reminded about?</label>
@@ -134,15 +177,13 @@
       </div>
 
       <div class="section-title">Main Settings</div>
-      <div id="schedule-list">
-        <!-- schedules added here -->
-      </div>
+      <div id="schedule-list"></div>
       <div class="schedule-row" id="add-schedule-row" style="justify-content:flex-start; gap:8px;">
-        <span style="color:var(--accent-2); font-weight:600;">+</span>
+        <span style="color:var(--accent-2); font-weight:700;">+</span>
         <span>Add a schedule</span>
       </div>
 
-      <div class="field" style="margin-top:14px;">
+      <div class="field" style="margin-top:16px;">
         <label>Type</label>
         <div class="kind-row" id="kind-row">
           <label><input type="radio" name="kind" value="reminder"/> <div><div class="t">Reminder</div><div class="s">I send it and complete it for you</div></div></label>
@@ -162,8 +203,14 @@
       </div>
 
       <div class="field">
-        <label>Image (optional, Telegram photo URL or file_id)</label>
-        <input id="f-image" placeholder="https://... or file_id"/>
+        <label>Image (optional)</label>
+        <div class="img-tile" id="img-tile">&#128247; Tap to upload an image<br/><span style="font-size:11px">JPEG, PNG or WebP, up to 5 MB</span></div>
+        <input type="file" id="f-image-file" accept="image/jpeg,image/png,image/webp" style="display:none"/>
+        <div class="img-preview" id="img-preview">
+          <img id="img-preview-img" alt="Attachment preview"/>
+          <button class="rm" id="img-remove" title="Remove">&#10005;</button>
+        </div>
+        <div class="img-error" id="img-error"></div>
       </div>
 
       <div class="save-bar">
@@ -173,16 +220,17 @@
     </div>
   </div>
 
-  <!-- Settings modal -->
+  <!-- Settings sheet -->
   <div class="modal-backdrop" id="settings-backdrop">
     <div class="modal" id="settings-modal">
+      <div class="grabber"></div>
       <h3>Settings</h3>
       <div class="field">
         <label>Timezone (IANA)</label>
         <input id="s-tz" placeholder="e.g. Europe/Amsterdam"/>
       </div>
       <div class="field">
-        <label class="switch"><input type="checkbox" id="s-snooze"/> Hide snooze buttons</label>
+        <label><input type="checkbox" id="s-snooze"/> Hide snooze buttons</label>
       </div>
       <div class="save-bar">
         <button class="ghost" id="btn-close-settings">Close</button>
@@ -191,9 +239,10 @@
     </div>
   </div>
 
-  <!-- Schedule picker modal -->
+  <!-- Schedule picker sheet -->
   <div class="modal-backdrop" id="sched-picker-backdrop">
     <div class="modal">
+      <div class="grabber"></div>
       <h3>Pick a schedule</h3>
       <div id="sched-options"></div>
       <div class="save-bar">
@@ -206,7 +255,6 @@
 
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="app.js"></script>
-  <script src="app.debug.js"></script>
+<script src="app.debug.js"></script>
 </body>
 </html>
-

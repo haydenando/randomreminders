@@ -11,15 +11,21 @@ A personal Telegram reminder bot with a Skeddy-style mini app and a killer featu
 ## Features
 
 - **Secret-phrase gated**: public bot, but only works if you type the phrase
-  (`haydenando` by default).
+  (`haydenando` by default). After that you get a Skeddy-style onboarding:
+  a choice between "Open Mini App" and "Set up in chat" (time zone,
+  language, chat language).
 - **Randomized intervals**: `every 10-20m stretch` fires every 10 to 20 minutes,
   re-rolling the random gap each time.
 - **Six schedule types**: specific time, every day, interval, days of the week,
   days of the month, date range.
-- **Three reminder types**: reminder (auto-complete), task (wait for you, with
-  snooze buttons), silent task (no notification).
+- **Three reminder types**: reminder (auto-complete), task (wait for you),
+  silent task (no notification).
 - **Customizable message text** per reminder (`{text}`, `{id}`, `{next}` placeholders).
-- **Optional image** attached to each reminder (by file_id or URL).
+- **Optional image** per reminder, uploaded from the mini app (no links/file
+  ids). Bytes are cached in memory and backed up in the vault chat by the
+  vault bot, so images survive restarts.
+- **Buttonless reminders**: reminders arrive as plain text (or photo + caption)
+  with no inline buttons. Done / delete / snooze live in the mini app.
 - **Chat commands** + a **mini app** (Skeddy-style) for full editing.
 
 ## Commands
@@ -106,6 +112,11 @@ vault chat and **pins** it. Every change to reminders or user settings edits
 that same message. On the next boot, the bot reads the pinned message to
 restore state. Because the message lives in Telegram's backend — not on
 Render's disk — your data survives every redeploy and dyno restart.
+
+Images work the same way: when you upload one in the mini app, the bytes are
+cached in memory and sent to the vault chat as a document by the vault bot.
+The vault message stores the vault bot's `file_id` for it, so after a restart
+the image can be re-downloaded and sent by the main bot.
 
 ## Project layout
 
