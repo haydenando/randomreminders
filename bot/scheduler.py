@@ -14,6 +14,8 @@ Schedule kinds and how the next fire time is computed:
 """
 from __future__ import annotations
 
+import asyncio
+
 import logging
 import random
 from datetime import datetime, time, timedelta, timezone
@@ -159,19 +161,48 @@ class ReminderScheduler:
         self.vault = vault
         self.send_fn = send_fn  # async (user_id, reminder) -> None
         self.sched = AsyncIOScheduler(timezone=utcnow().astimezone().tzinfo)
+        self._watchdog_task: asyncio.Task | None = None
 
     async def start(self) -> None:
         """Load state, schedule everything, start the APScheduler loop."""
         await self.vault.setup()
         self._reschedule_all()
         self.sched.start()
-        log.info("Scheduler started with %d reminders", len(self.vault.db.reminders))
+        self._watchdog_task = asyncio.create_task(self._watchdog_loop())
+        log.info("Scheduler started with %d reminders (watchdog active)", len(self.vault.db.reminders))
 
     async def shutdown(self) -> None:
+        if self._watchdog_task:
+            self._watchdog_task.cancel()
         try:
             self.sched.shutdown(wait=False)
         except Exception:  # noqa: BLE001
             pass
+
+    async def _watchdog_loop(self) -> None:
+        while True:
+            try:
+                await asyncio.sleep(10)
+                now = utcnow()
+                for r in list(self.vault.db.reminders.values()):
+                    if r.completed:
+                        continue
+                    if r.next_fire:
+                        try:
+                            nxt = datetime.fromisoformat(r.next_fire)
+                            if nxt.tzinfo is None:
+                                nxt = nxt.replace(tzinfo=timezone.utc)
+                            if nxt <= now:
+                                log.info("Watchdog firing overdue reminder #%s", r.id)
+                                await self._fire(r.id)
+                        except Exception:
+                            pass
+                    else:
+                        self._reschedule_one(r, now)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                log.exception("Watchdog error")
 
     def _job_id(self, rid: int) -> str:
         return f"reminder-{rid}"
@@ -203,7 +234,7 @@ class ReminderScheduler:
             id=jid,
             args=[r.id],
             replace_existing=True,
-            misfire_grace_time=60,
+            misfire_grace_time=3600,
         )
 
     async def _fire(self, rid: int) -> None:
@@ -215,7 +246,10 @@ class ReminderScheduler:
         r.last_fire = now.isoformat()
         if r.schedule_type == "once":
             r.completed = True
-        await self.send_fn(r.user_id, r)
+        try:
+            await self.send_fn(r.user_id, r)
+        except Exception:  # noqa: BLE001
+            log.exception("Failed to send reminder #%s", rid)
         # For task_no_notify we never send; just mark last_fire.
         # Reschedule for next fire (interval re-rolls its random delay here).
         self._reschedule_one(r, now)
