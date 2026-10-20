@@ -1,6 +1,6 @@
-# Skeddy - Reminder bot for Telegram
+# Gently Reminding Bot - Reminder bot for Telegram
 
-A personal Telegram reminder bot with a Skeddy-style mini app and a killer feature:
+A personal Telegram reminder bot with a Gently Reminding mini app and a killer feature:
 **randomized interval reminders** ("tell me every 10-20 minutes").
 
 - No database. All state lives in a hidden Telegram message (the *vault*), so it
@@ -11,7 +11,7 @@ A personal Telegram reminder bot with a Skeddy-style mini app and a killer featu
 ## Features
 
 - **Secret-phrase gated**: public bot, but only works if you type the phrase
-  (`haydenando` by default). After that you get a Skeddy-style onboarding:
+  (`haydenando` by default). After that you get a Gently Reminding onboarding:
   a choice between "Open Mini App" and "Set up in chat" (time zone).
 - **Randomized intervals**: `every 10-20m stretch` fires indefinitely every 10 to 20 minutes,
   re-rolling the random gap each time.
@@ -26,7 +26,7 @@ A personal Telegram reminder bot with a Skeddy-style mini app and a killer featu
   vault bot, so images survive restarts.
 - **Buttonless reminders**: reminders arrive as plain text (or photo + caption)
   with no inline buttons. Done / delete / snooze live in the mini app.
-- **Chat commands** + a **mini app** (Skeddy-style) for full editing.
+- **Chat commands** + a **mini app** (Gently Reminding) for full editing.
 
 ## Commands
 
@@ -65,7 +65,7 @@ mon-fri 12:00 lunch         # weekdays at noon
 ### 1. Create the main bot
 
 1. Message @BotFather on Telegram.
-2. Send `/newbot`, pick a username (e.g. `HaydenandoSkeddyBot`) and a name.
+2. Send `/newbot`, pick a username (e.g. `HaydenandoGently Reminding BotBot`) and a name.
 3. Copy the token — this is `BOT_TOKEN`.
 
 ### 2. Create the vault bot
@@ -73,7 +73,7 @@ mon-fri 12:00 lunch         # weekdays at noon
 The vault bot is a second bot that owns the hidden data message. It keeps your
 reminders alive across redeploys.
 
-1. In @BotFather, send `/newbot` again and create a second bot (e.g. `SkeddyVaultBot`).
+1. In @BotFather, send `/newbot` again and create a second bot (e.g. `Gently Reminding BotVaultBot`).
 2. Copy its token — this is `VAULT_TOKEN`.
 3. Start a chat with the vault bot (send it any message, e.g. `hi`).
 4. Get the chat id: open
@@ -130,7 +130,7 @@ bot/
   handlers.py      # chat command + callback handlers
   miniapp_api.py   # FastAPI router for the web app
 web/
-  index.html       # Skeddy-style mini app UI
+  index.html       # Gently Reminding mini app UI
   app.js           # mini app logic
 requirements.txt
 .env.example

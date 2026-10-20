@@ -1,4 +1,4 @@
-"""FastAPI router for the Skeddy-style mini app.
+"""FastAPI router for the Gently Reminding mini app.
 
 The mini app is a static HTML/JS page served at / that talks to these
 JSON endpoints. Authentication: the mini app is opened from inside the

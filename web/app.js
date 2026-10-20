@@ -1,4 +1,4 @@
-// Reminder Bot mini app
+// Gently Reminding Bot mini app
 const tg = window.Telegram?.WebApp;
 tg?.ready?.();
 tg?.expand?.();
@@ -109,7 +109,7 @@ async function loadList() {
     renderTabs();
     const items = data.items.filter(r => tab === "active" ? !r.completed : r.completed);
     if (!items.length) {
-      main.innerHTML = `<div class="empty"><span class="big">\\u{1F4CB}</span>No ${tab} reminders yet.<br/>Tap + Create to add one.</div>`;
+      main.innerHTML = `<div class="empty"><span class="big">\u{1F4CB}</span>No ${tab} reminders yet.<br/>Tap + Create to add one.</div>`;
       return;
     }
     main.innerHTML = items.map(renderCard).join("");
@@ -143,7 +143,7 @@ function renderTabs() {
 }
 
 function kindIcon(r) {
-  return r.kind === "countdown" ? "\\u{23F3}" : "\\u{1F514}";
+  return r.kind === "countdown" ? "\u{23F3}" : "\u{1F514}";
 }
 
 function renderCard(r) {
@@ -156,7 +156,7 @@ function renderCard(r) {
   const snoozeBtns = (r.kind !== "countdown" && !r.completed)
     ? [60, 300, 900, 3600].map(s => `<button class="snooze snooze-${r.id}" data-secs="${s}">+${s < 3600 ? s/60 + "m" : s/3600 + "h"}</button>`).join("")
     : "";
-  const imgTag = r.image_id ? " \\u{1F5BC}" : "";
+  const imgTag = r.image_id ? " \u{1F5BC}" : "";
   return `
     <div class="card" data-id="${r.id}">
       <div class="top">
@@ -173,7 +173,7 @@ function renderCard(r) {
         </div>
       </div>
       <div class="actions">
-        ${r.completed ? "" : `<button class="done" id="done-${r.id}">\\u2705 Done</button>`}
+        ${r.completed ? "" : `<button class="done" id="done-${r.id}">\u2705 Done</button>`}
         ${snoozeBtns}
         <span class="spacer"></span>
         <button id="edit-${r.id}">Edit</button>
@@ -280,7 +280,7 @@ function renderTags() {
   const renders = (wrapId, inputId) => {
     const wrap = $(wrapId);
     if (!wrap) return;
-    const chips = formState.tags.map((t, i) => `<span class="chip">#${escapeHtml(t)}<span class="x" data-i="${i}">\\u00d7</span></span>`).join("");
+    const chips = formState.tags.map((t, i) => `<span class="chip">#${escapeHtml(t)}<span class="x" data-i="${i}">\u00d7</span></span>`).join("");
     wrap.innerHTML = `${chips}<button class="chip-add" data-add>+ Add tag</button><input id="${inputId}" placeholder="Type a tag and press Enter" style="display:none; flex:1; min-width:120px;"/>`;
   };
   renders("#tag-wrap", "tag-input");
@@ -318,8 +318,8 @@ function renderScheduleList() {
         <div class="sub">${categoryFor(s.schedule_type) === "complex" ? "Complex" : (categoryFor(s.schedule_type) === "interval" ? "Interval" : "One time")}</div>
       </div>
       <div class="actions">
-        <button class="icon-btn" data-act="edit-sched" data-idx="${i}">\\u270E</button>
-        <button class="icon-btn" data-act="del-sched" data-idx="${i}">\\u{1F5D1}</button>
+        <button class="icon-btn" data-act="edit-sched" data-idx="${i}">\u270E</button>
+        <button class="icon-btn" data-act="del-sched" data-idx="${i}">\u{1F5D1}</button>
       </div>
     </div>
   `).join("");
@@ -345,7 +345,7 @@ function scheduleDetailLabel(s) {
   if (type === "every_day") return "Every day at " + (s.time_of_day || "09:00");
   if (type === "weekdays") return (s.weekdays || []).map(i => WEEKDAY_PILLS[i]).join(", ") + " at " + (s.time_of_day || "09:00");
   if (type === "monthdays") return "Days " + (s.monthdays || []).join(", ") + " at " + (s.time_of_day || "09:00");
-  if (type === "daterange") return `${s.range_start} \\u2192 ${s.range_end} at ${s.time_of_day || "09:00"}`;
+  if (type === "daterange") return `${s.range_start} \u2192 ${s.range_end} at ${s.time_of_day || "09:00"}`;
   return type;
 }
 
@@ -354,7 +354,7 @@ function openSchedulePicker() {
   opts.innerHTML = SCHEDULE_CATEGORIES.map(c => `
     <div class="option" data-id="${c.id}">
       <div><div class="t">${c.label}</div><div class="s">${c.desc}</div></div>
-      <div class="chev">\\u203A</div>
+      <div class="chev">\u203A</div>
     </div>
   `).join("");
   opts.querySelectorAll(".option").forEach(o => {
