@@ -555,7 +555,7 @@ function localDT(iso) {
 
 function readSchedEditor() {
   if (editorType === "once") {
-    const rnd = !!document.querySelector("#se-random button.active")?.dataset.r === "1";
+    const rnd = document.querySelector("#se-random button.active")?.dataset.r === "1";
     if (rnd) {
       const lo = $("#se-at-min")?.value, hi = $("#se-at-max")?.value;
       return { schedule_type: "once", at: null,
@@ -566,7 +566,7 @@ function readSchedEditor() {
     return { schedule_type: "once", at: v ? new Date(v).toISOString() : null, time_of_day: null };
   }
   if (editorType === "interval") {
-    const rnd = !!document.querySelector("#se-random button.active")?.dataset.r === "1";
+    const rnd = document.querySelector("#se-random button.active")?.dataset.r === "1";
     const unit = $("#se-unit")?.value || "Hours";
     if (rnd) {
       const lo = parseInt($("#se-lo")?.value || "1", 10);
@@ -582,7 +582,7 @@ function readSchedEditor() {
   }
   // complex
   const st = $("#se-complex-type")?.value || "every_day";
-  const rnd = !!document.querySelector("#se-random button.active")?.dataset.r === "1";
+  const rnd = document.querySelector("#se-random button.active")?.dataset.r === "1";
   const base = { schedule_type: st, time_of_day: $("#se-tod")?.value || "09:00" };
   if (rnd) {
     base.random_time = true;
