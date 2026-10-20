@@ -118,11 +118,16 @@ python main.py
 
 ## How the vault works
 
-On first start, the bot (using the vault bot's token) sends a JSON blob to the
-vault chat and **pins** it. Every change to reminders or user settings edits
-that same message. On the next boot, the bot reads the pinned message to
-restore state. Because the message lives in Telegram's backend — not on
-Render's disk — your data survives every redeploy and dyno restart.
+On first start, the bot (using the vault bot's token) sends a small JSON *index*
+to the vault chat and **pins** it. Every change to reminders or user settings
+updates that pinned index. The actual DB payload is stored *inline* in the index
+for small databases, and — once it would exceed Telegram's 4096-character
+message limit — is stored as a `vault.json` **document** in the same chat,
+referenced by the index. On the next boot the bot reads the pinned index (and, if
+needed, downloads the document) to restore state. Because everything lives in
+Telegram's backend — not on Render's disk — your data survives every redeploy and
+dyno restart, and the database can grow to thousands of reminders/users instead
+of being capped at a few dozen.
 
 Images work the same way: when you upload one in the mini app, the bytes are
 cached in memory and sent to the vault chat as a document by the vault bot.

@@ -121,7 +121,6 @@ class ReminderIn(BaseModel):
 class UserSettingsIn(BaseModel):
     timezone: str | None = None
     hide_snooze: bool | None = None
-    language: str | None = None
     snooze_durations: list[int] | None = None
 
 
@@ -393,7 +392,6 @@ async def get_settings(user_id: int = Depends(_user_id_from_query)):
     return {
         "timezone": us.timezone,
         "hide_snooze": us.hide_snooze,
-        "language": us.language,
         "default_tz": STATE.settings.default_tz,
         "snooze_durations": us.snooze_durations,
     }
@@ -408,8 +406,6 @@ async def put_settings(body: UserSettingsIn, user_id: int = Depends(_user_id_fro
         us.timezone = body.timezone
     if body.hide_snooze is not None:
         us.hide_snooze = body.hide_snooze
-    if body.language is not None:
-        us.language = body.language
     if body.snooze_durations is not None:
         # sanitize: positive integers, up to 3, cap at 7 days
         durs = [int(x) for x in body.snooze_durations if isinstance(x, (int, float)) and x > 0][:3]

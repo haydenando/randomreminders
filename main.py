@@ -76,10 +76,8 @@ async def send_reminder(user_id: int, r) -> None:
         local_next = _fmt_next(r, tzname) if r.next_fire else ""
         if r.message_template:
             text = r.message_template.format(text=r.text, id=r.id, next=local_next)
-        elif r.kind == "countdown":
-            text = f"⏳ Countdown #{r.id}: {r.text}\nNext: {local_next}"
         else:
-            text = f"Reminder #{r.id}: {r.text}\nNext: {local_next}"
+            text = r.text
         image_data = await STATE.vault.get_image(r.image_id)
         if image_data is None and r.image_file_id:
             # legacy reminders that already hold a Telegram file_id
@@ -95,10 +93,8 @@ async def send_reminder(user_id: int, r) -> None:
             local_next = _fmt_next(r, tzname) if r.next_fire else ""
             if r.message_template:
                 text = r.message_template.format(text=r.text, id=r.id, next=local_next)
-            elif r.kind == "countdown":
-                text = f"⏳ Countdown #{r.id}: {r.text}\nNext: {local_next}"
             else:
-                text = f"Reminder #{r.id}: {r.text}\nNext: {local_next}"
+                text = r.text
             if r.image_file_id:
                 await bot.send_photo(user_id, r.image_file_id, caption=text)
             elif r.main_file_id and r.media_type == "document":
