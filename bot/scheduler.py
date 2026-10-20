@@ -47,17 +47,31 @@ def _parse_hhmm(s: str | None, default: time = time(9, 0)) -> time:
         return default
 
 
-def _next_daily(tod: time, tz_name: str, after: datetime) -> datetime:
+def _day_time(r: Reminder | None, day, z: ZoneInfo, tod: time) -> datetime:
+    """Datetime for `day`, honoring random_time/window, else fixed tod."""
+    if r is not None and getattr(r, "random_time", False):
+        start_t = _parse_hhmm(r.window_start, time(0, 0))
+        end_t = _parse_hhmm(r.window_end, time(23, 59))
+        start_dt = datetime.combine(day, start_t, tzinfo=z)
+        end_dt = datetime.combine(day, end_t, tzinfo=z)
+        if end_dt <= start_dt:
+            end_dt = start_dt
+        secs = int((end_dt - start_dt).total_seconds())
+        return start_dt + timedelta(seconds=random.randint(0, max(secs, 0)))
+    return datetime.combine(day, tod, tzinfo=z)
+
+
+def _next_daily(tod: time, tz_name: str, after: datetime, r: Reminder | None = None) -> datetime:
     """Next occurrence of tod in tz_name, strictly after `after` (UTC)."""
     z = _tz(tz_name)
     local_after = after.astimezone(z)
-    cand = datetime.combine(local_after.date(), tod, tzinfo=z)
+    cand = _day_time(r, local_after.date(), z, tod)
     if cand <= after:
-        cand = cand + timedelta(days=1)
+        cand = _day_time(r, local_after.date() + timedelta(days=1), z, tod)
     return cand.astimezone(timezone.utc)
 
 
-def _next_weekday(tod: time, tz_name: str, weekdays: list[int], after: datetime) -> datetime | None:
+def _next_weekday(tod: time, tz_name: str, weekdays: list[int], after: datetime, r: Reminder | None = None) -> datetime | None:
     """Next occurrence of tod on a selected weekday (0=Mon..6=Sun)."""
     if not weekdays:
         return None
@@ -67,9 +81,9 @@ def _next_weekday(tod: time, tz_name: str, weekdays: list[int], after: datetime)
         day = local_after.date() + timedelta(days=offset)
         if day.weekday() not in weekdays:
             continue
-        cand = datetime.combine(day, tod, tzinfo=z)
+        cand = _day_time(r, day, z, tod)
         if offset == 0 and cand <= after:
-            cand = cand + timedelta(days=7)
+            cand = _day_time(r, day + timedelta(days=7), z, tod)
             # re-check: a later weekday might be sooner
             continue
         return cand.astimezone(timezone.utc)
@@ -77,13 +91,13 @@ def _next_weekday(tod: time, tz_name: str, weekdays: list[int], after: datetime)
     for offset in range(0, 15):
         day = local_after.date() + timedelta(days=offset)
         if day.weekday() in weekdays:
-            cand = datetime.combine(day, tod, tzinfo=z)
+            cand = _day_time(r, day, z, tod)
             if cand > after:
                 return cand.astimezone(timezone.utc)
     return None
 
 
-def _next_monthday(tod: time, tz_name: str, monthdays: list[int], after: datetime) -> datetime | None:
+def _next_monthday(tod: time, tz_name: str, monthdays: list[int], after: datetime, r: Reminder | None = None) -> datetime | None:
     """Next occurrence of tod on a selected day-of-month (1..31)."""
     if not monthdays:
         return None
@@ -93,14 +107,14 @@ def _next_monthday(tod: time, tz_name: str, monthdays: list[int], after: datetim
         day = local_after.date() + timedelta(days=offset)
         if day.day not in monthdays:
             continue
-        cand = datetime.combine(day, tod, tzinfo=z)
+        cand = _day_time(r, day, z, tod)
         if cand > after:
             return cand.astimezone(timezone.utc)
     return None
 
 
 def _next_in_range(
-    tod: time, tz_name: str, start: str, end: str, after: datetime
+    tod: time, tz_name: str, start: str, end: str, after: datetime, r: Reminder | None = None
 ) -> datetime | None:
     """Next occurrence of tod on a date within [start, end]."""
     if not start or not end:
@@ -115,7 +129,7 @@ def _next_in_range(
     day = local_after.date()
     while day <= end_d:
         if day >= start_d:
-            cand = datetime.combine(day, tod, tzinfo=z)
+            cand = _day_time(r, day, z, tod)
             if cand > after:
                 return cand.astimezone(timezone.utc)
         day = day + timedelta(days=1)
@@ -131,22 +145,13 @@ def _next_every_ndays(r: Reminder, after: datetime) -> datetime | None:
         anchor = datetime.fromisoformat(r.created_at or "").astimezone(z).date()
     except Exception:  # noqa: BLE001
         anchor = local_after.date()
+    tod = _parse_hhmm(r.time_of_day)
     # fire on days where (date - anchor).days % days == 0
     for offset in range(0, days * 5 + 2):
         d = local_after.date() + timedelta(days=offset)
         if (d - anchor).days % days != 0:
             continue
-        if r.random_time:
-            start_t = _parse_hhmm(r.window_start, time(0, 0))
-            end_t = _parse_hhmm(r.window_end, time(23, 59))
-            start_dt = datetime.combine(d, start_t, tzinfo=z)
-            end_dt = datetime.combine(d, end_t, tzinfo=z)
-            if end_dt <= start_dt:
-                end_dt = start_dt + timedelta(seconds=end_dt - start_dt or 3600)
-            secs = int((end_dt - start_dt).total_seconds())
-            cand = start_dt + timedelta(seconds=random.randint(0, max(secs, 0)))
-        else:
-            cand = datetime.combine(d, _parse_hhmm(r.time_of_day), tzinfo=z)
+        cand = _day_time(r, d, z, tod)
         if cand > after:
             return cand.astimezone(timezone.utc)
     return None
@@ -180,7 +185,7 @@ def compute_next_fire(r: Reminder, from_dt: datetime) -> datetime | None:
             return cand if cand > from_dt else None
         return None
     if r.schedule_type == "every_day":
-        return _next_daily(tod, r.tz, from_dt)
+        return _next_daily(tod, r.tz, from_dt, r)
     if r.schedule_type == "interval":
         lo = float(r.min_seconds or 60)
         hi = float(r.max_seconds or lo)
@@ -193,11 +198,11 @@ def compute_next_fire(r: Reminder, from_dt: datetime) -> datetime | None:
     if r.schedule_type == "cron":
         return _next_cron(r, from_dt)
     if r.schedule_type == "weekdays":
-        return _next_weekday(tod, r.tz, r.weekdays, from_dt)
+        return _next_weekday(tod, r.tz, r.weekdays, from_dt, r)
     if r.schedule_type == "monthdays":
-        return _next_monthday(tod, r.tz, r.monthdays, from_dt)
+        return _next_monthday(tod, r.tz, r.monthdays, from_dt, r)
     if r.schedule_type == "daterange":
-        return _next_in_range(tod, r.tz, r.range_start, r.range_end, from_dt)
+        return _next_in_range(tod, r.tz, r.range_start, r.range_end, from_dt, r)
     return None
 
 

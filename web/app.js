@@ -428,43 +428,52 @@ function renderSchedEditor(existing) {
   }
 }
 
-function complexSubfields(st, existing) {
+function timeModeHtml(existing) {
   const tod = existing?.time_of_day || "09:00";
+  const rnd = !!existing?.random_time;
+  const ws = existing?.window_start || "00:00";
+  const we = existing?.window_end || "23:59";
+  return `<div class="field"><label>Time mode</label><div class="seg" id="se-random">
+      <button class="${rnd ? "" : "active"}" data-r="0">Fixed</button>
+      <button class="${rnd ? "active" : ""}" data-r="1">Random</button>
+    </div></div>
+    <div class="field" id="se-fixed-row" style="display:${rnd ? "none" : ""}"><label>At time</label><input id="se-tod" type="time" value="${tod}"/></div>
+    <div class="row2" id="se-window-row" style="display:${rnd ? "" : "none"};">
+      <div class="field"><label>From</label><input id="se-ws" type="time" value="${ws}"/></div>
+      <div class="field"><label>To</label><input id="se-we" type="time" value="${we}"/></div>
+    </div>`;
+}
+
+function bindTimeMode() {
+  $all("#se-random button").forEach(b => b.addEventListener("click", () => {
+    $all("#se-random button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    const fr = $("#se-fixed-row");
+    if (fr) fr.style.display = b.dataset.r === "1" ? "none" : "";
+    const wr = $("#se-window-row");
+    if (wr) wr.style.display = b.dataset.r === "1" ? "" : "none";
+  }));
+}
+
+function complexSubfields(st, existing) {
   if (st === "weekdays") {
     const sel = existing?.weekdays || [];
-    return `<div class="field"><label>Time</label><input id="se-tod" type="time" value="${tod}"/></div>
-      <div class="field"><label>Days</label><div class="pill-row">${WEEKDAY_PILLS.map((w,i)=>`<div class="pill ${sel.includes(i)?"active":""}" data-weekday="${i}">${w}</div>`).join("")}</div></div>`;
+    return `<div class="field"><label>Days</label><div class="pill-row">${WEEKDAY_PILLS.map((w,i)=>`<div class="pill ${sel.includes(i)?"active":""}" data-weekday="${i}">${w}</div>`).join("")}</div></div>${timeModeHtml(existing)}`;
   }
   if (st === "monthdays") {
     const sel = existing?.monthdays || [];
-    return `<div class="field"><label>Time</label><input id="se-tod" type="time" value="${tod}"/></div>
-      <div class="field"><label>Days of month</label><div class="pill-row">${Array.from({length:31},(_,i)=>i+1).map(d=>`<div class="pill ${sel.includes(d)?"active":""}" data-monthday="${d}">${d}</div>`).join("")}</div></div>`;
+    return `<div class="field"><label>Days of month</label><div class="pill-row">${Array.from({length:31},(_,i)=>i+1).map(d=>`<div class="pill ${sel.includes(d)?"active":""}" data-monthday="${d}">${d}</div>`).join("")}</div></div>${timeModeHtml(existing)}`;
   }
   if (st === "daterange") {
-    return `<div class="field"><label>Time</label><input id="se-tod" type="time" value="${tod}"/></div>
-      <div class="row2"><div class="field"><label>Start date</label><input id="se-start" type="date" value="${existing?.range_start||""}"/></div><div class="field"><label>End date</label><input id="se-end" type="date" value="${existing?.range_end||""}"/></div></div>`;
+    return `<div class="row2"><div class="field"><label>Start date</label><input id="se-start" type="date" value="${existing?.range_start||""}"/></div><div class="field"><label>End date</label><input id="se-end" type="date" value="${existing?.range_end||""}"/></div></div>${timeModeHtml(existing)}`;
   }
   if (st === "every_ndays") {
-    const rnd = existing?.random_time;
-    const ws = existing?.window_start || "00:00";
-    const we = existing?.window_end || "23:59";
-    return `<div class="field"><label>Every (days)</label><input id="se-period" type="number" min="1" value="${existing?.period_days || 1}"/></div>
-      <div class="field"><label>Time</label>
-        <select id="se-time-mode">
-          <option value="fixed" ${rnd ? "" : "selected"}>Fixed time</option>
-          <option value="random" ${rnd ? "selected" : ""}>Random</option>
-        </select>
-      </div>
-      <div class="field" id="se-fixed-row" style="display:${rnd ? "none" : ""}"><label>At time</label><input id="se-tod" type="time" value="${tod}"/></div>
-      <div class="row2" id="se-window-row" style="display:${rnd ? "" : "none"};">
-        <div class="field"><label>From</label><input id="se-ws" type="time" value="${ws}"/></div>
-        <div class="field"><label>To</label><input id="se-we" type="time" value="${we}"/></div>
-      </div>`;
+    return `<div class="field"><label>Every (days)</label><input id="se-period" type="number" min="1" value="${existing?.period_days || 1}"/></div>${timeModeHtml(existing)}`;
   }
   if (st === "cron") {
     return `<div class="field"><label>Cron (minute hour day month weekday)</label><input id="se-cron" placeholder="0 9 * * *" value="${existing?.cron_expr || ""}"/></div>`;
   }
-  return `<div class="field"><label>Time</label><input id="se-tod" type="time" value="${tod}"/></div>`;
+  return timeModeHtml(existing);
 }
 
 function renderComplexSubfields(st, existing) {
@@ -475,13 +484,7 @@ function renderComplexSubfields(st, existing) {
   `;
   $("#se-complex-type").addEventListener("change", (e) => renderComplexSubfields(e.target.value, existing));
   bindComplexPills();
-  $("#se-time-mode")?.addEventListener("change", (e) => {
-    const rnd = e.target.value === "random";
-    const fr = $("#se-fixed-row");
-    if (fr) fr.style.display = rnd ? "none" : "";
-    const wr = $("#se-window-row");
-    if (wr) wr.style.display = rnd ? "" : "none";
-  });
+  bindTimeMode();
 }
 
 function bindComplexPills() {
@@ -517,25 +520,21 @@ function readSchedEditor() {
   }
   // complex
   const st = $("#se-complex-type")?.value || "every_day";
-  const tod = $("#se-tod")?.value || "09:00";
-  const base = { schedule_type: st, time_of_day: tod };
+  const rnd = !!document.querySelector("#se-random button.active")?.dataset.r === "1";
+  const base = { schedule_type: st, time_of_day: $("#se-tod")?.value || "09:00" };
+  if (rnd) {
+    base.random_time = true;
+    base.window_start = $("#se-ws")?.value || "00:00";
+    base.window_end = $("#se-we")?.value || "23:59";
+    base.time_of_day = null;
+  } else {
+    base.random_time = false;
+    base.window_start = null; base.window_end = null;
+  }
   if (st === "weekdays") base.weekdays = [...$all("[data-weekday].active")].map(p => parseInt(p.dataset.weekday, 10));
   if (st === "monthdays") base.monthdays = [...$all("[data-monthday].active")].map(p => parseInt(p.dataset.monthday, 10));
   if (st === "daterange") { base.range_start = $("#se-start")?.value; base.range_end = $("#se-end")?.value; }
-  if (st === "every_ndays") {
-    base.period_days = parseInt($("#se-period")?.value || "1", 10) || 1;
-    const mode = $("#se-time-mode")?.value || "fixed";
-    if (mode === "random") {
-      base.random_time = true;
-      base.window_start = $("#se-ws")?.value || "00:00";
-      base.window_end = $("#se-we")?.value || "23:59";
-      base.time_of_day = null;
-    } else {
-      base.random_time = false;
-      base.window_start = null; base.window_end = null;
-      base.time_of_day = $("#se-tod")?.value || "09:00";
-    }
-  }
+  if (st === "every_ndays") { base.period_days = parseInt($("#se-period")?.value || "1", 10) || 1; }
   if (st === "cron") { base.cron_expr = $("#se-cron")?.value.trim(); }
   return base;
 }
