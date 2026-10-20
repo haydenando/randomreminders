@@ -1,4 +1,4 @@
-"""Gently Reminding Bot - Reminder bot for Telegram.
+"""Randomly Remind Me - Reminder bot for Telegram.
 
 Single-process entrypoint that runs:
   1. The python-telegram-bot application (long-polling, talks to Telegram)
@@ -88,7 +88,7 @@ def build_fastapi() -> FastAPI:
     async def lifespan(app: FastAPI):
         yield
 
-    app = FastAPI(title="Gently Reminding Bot", version="1.0.0", lifespan=lifespan)
+    app = FastAPI(title="Randomly Remind Me", version="1.0.0", lifespan=lifespan)
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
     app.include_router(miniapp_api.router)
 
@@ -155,7 +155,7 @@ async def stop_bot(ptb_app, scheduler: ReminderScheduler) -> None:
 
 
 def main() -> None:
-    log.info("Gently Reminding Bot starting")
+    log.info("Randomly Remind Me starting")
     settings = load_settings()
     vault = Vault(settings)
     scheduler = ReminderScheduler(settings, vault, send_reminder)
@@ -191,7 +191,7 @@ def main() -> None:
         finally:
             stop_task.cancel()
             await stop_bot(ptb_app, scheduler)
-            log.info("Gently Reminding Bot stopped")
+            log.info("Randomly Remind Me stopped")
 
     try:
         asyncio.run(run())

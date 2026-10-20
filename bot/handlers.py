@@ -1,7 +1,7 @@
 """Telegram chat handlers.
 
 All commands go through the secret-phrase gate on first use. Once verified,
-the user gets a Gently Reminding onboarding (mini app button or chat setup with
+the user gets a Randomly Remind Me onboarding (mini app button or chat setup with
 timezone), then creates reminders by just chatting.
 
 Reminders are delivered as plain text (or photo+caption) messages with NO
@@ -16,7 +16,7 @@ Commands:
   /help_reminder_types - difference between reminder and countdown
   /help_schedules      - what the schedule icons mean
   /cancel              - cancel the current inline action
-  /miniapp             - open the Gently Reminding mini app
+  /miniapp             - open the Randomly Remind Me mini app
   /settings            - open settings (timezone, snooze)
 """
 from __future__ import annotations
@@ -160,7 +160,7 @@ def _miniapp_url() -> str | None:
 
 
 def _onboard_keyboard() -> InlineKeyboardMarkup:
-    """First onboarding screen: mini app button + chat setup (Gently Reminding)."""
+    """First onboarding screen: mini app button + chat setup (Randomly Remind Me)."""
     url = _miniapp_url()
     rows = [[InlineKeyboardButton("💬 Set up in chat", callback_data="setup:chat")]]
     if url:
@@ -215,7 +215,7 @@ async def _finish_onboarding(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def _send_welcome(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Welcome screen for a verified user (Gently Reminding)."""
+    """Welcome screen for a verified user (Randomly Remind Me)."""
     us = user_state(ctx, update)
     if not us.onboarded:
         await update.effective_message.reply_text(
@@ -294,7 +294,7 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not await verify_gate(ctx, update):
         return
     text = (
-        "Gently Reminding Bot help\n\n"
+        "Randomly Remind Me help\n\n"
         "Commands\n"
         "/start — main menu\n"
         "/list — your reminders\n"
@@ -396,11 +396,11 @@ async def cmd_miniapp(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     kb = InlineKeyboardMarkup(
         [[InlineKeyboardButton("🚀 Open Mini App", web_app=WebAppInfo(url=app_url))]]
     )
-    await update.effective_message.reply_text("Opening Gently Reminding Bot mini app:", reply_markup=kb)
+    await update.effective_message.reply_text("Opening Randomly Remind Me mini app:", reply_markup=kb)
 
 
 async def cmd_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """/settings — open the settings (Gently Reminding panel)."""
+    """/settings — open the settings (Randomly Remind Me panel)."""
     if not await verify_gate(ctx, update):
         return
     us = user_state(ctx, update)

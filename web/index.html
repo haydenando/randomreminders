@@ -3,31 +3,34 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Gently Reminding Bot</title>
+<title>Randomly Remind Me</title>
 <style>
   :root {
-    --tg-bg: var(--tg-theme-bg-color, #0e0f13);
-    --tg-panel: var(--tg-theme-secondary-bg-color, #191b21);
-    --tg-text: var(--tg-theme-text-color, #f2f3f5);
-    --tg-hint: var(--tg-theme-hint-color, #9ba0aa);
-    --tg-link: var(--tg-theme-link-color, #4f8cff);
-    --tg-button: var(--tg-theme-button-color, #34b7a1);
-    --tg-button-text: var(--tg-theme-button-text-color, #06281f);
-    --accent: var(--tg-button);
-    --accent-2: var(--tg-link);
+    --tg-bg: var(--tg-theme-bg-color, #0b0b12);
+    --tg-panel: var(--tg-theme-secondary-bg-color, #171822);
+    --tg-text: var(--tg-theme-text-color, #f3f3f9);
+    --tg-hint: var(--tg-theme-hint-color, #a2a3b6);
+    --tg-link: var(--tg-theme-link-color, #8a4dff);
+    --tg-button: var(--tg-theme-button-color, #8a4dff);
+    --tg-button-text: var(--tg-theme-button-text-color, #ffffff);
+    --accent: #8a4dff;
+    --accent-2: #4a6cf7;
+    --gold: #ffd23f;
+    --accent-grad: linear-gradient(135deg, #9d4dff, #4a6cf7);
     --danger: #ff5d5d;
     --ok: #34c759;
     --radius: 18px;
-    --glass: rgba(255,255,255,0.055);
-    --glass-strong: rgba(255,255,255,0.08);
-    --glass-border: rgba(255,255,255,0.09);
+    --glass: rgba(255,255,255,0.06);
+    --glass-strong: rgba(255,255,255,0.09);
+    --glass-border: rgba(255,255,255,0.10);
     --maxw: 540px;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; padding: 0; min-height: 100%; }
   body { background:
-      radial-gradient(1200px 900px at 15% -10%, rgba(79,140,255,.14), transparent 60%),
-      radial-gradient(1100px 800px at 115% 15%, rgba(52,183,161,.12), transparent 55%),
+      radial-gradient(1200px 900px at 15% -10%, rgba(138,77,255,.20), transparent 60%),
+      radial-gradient(1100px 800px at 115% 15%, rgba(74,108,247,.16), transparent 55%),
+      radial-gradient(800px 600px at 50% 115%, rgba(255,210,63,.06), transparent 60%),
       var(--tg-bg);
     color: var(--tg-text);
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, sans-serif;
@@ -48,7 +51,7 @@
   header .logo { width: 36px; height: 36px; border-radius: 11px;
     background: linear-gradient(135deg, var(--accent), var(--accent-2));
     color: var(--tg-button-text); display: flex; align-items: center; justify-content: center;
-    font-weight: 800; font-size: 18px; box-shadow: 0 4px 14px rgba(52,183,161,.35); }
+    font-weight: 800; font-size: 18px; box-shadow: 0 4px 18px rgba(138,77,255,.45); }
   header h1 { font-size: 18px; margin: 0; font-weight: 700; letter-spacing: .2px; }
   .icon-btn { background: transparent; border: 0; color: var(--tg-hint); font-size: 21px;
     padding: 8px; border-radius: 12px; cursor: pointer; transition: background .15s ease; }
@@ -65,7 +68,7 @@
     padding: 11px; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
     transition: all .16s ease; }
   .seg button.active { background: var(--accent); color: var(--tg-button-text);
-    box-shadow: 0 4px 14px rgba(52,183,161,.35); }
+    box-shadow: 0 4px 18px rgba(138,77,255,.45); }
   .tabs { display: flex; background: var(--glass); backdrop-filter: blur(18px); border: 1px solid var(--glass-border);
     border-radius: 14px; padding: 5px; margin: 4px 0 14px; gap: 4px; }
   .tabs button { flex: 1; background: transparent; border: 0; color: var(--tg-hint);
@@ -175,7 +178,7 @@
     box-shadow: 0 10px 30px rgba(0,0,0,.2); }
   .setting-tile .setting-top { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
   .setting-emoji { width: 44px; height: 44px; border-radius: 13px;
-    background: linear-gradient(135deg, rgba(52,183,161,.22), rgba(79,140,255,.22));
+    background: linear-gradient(135deg, rgba(138,77,255,.30), rgba(74,108,247,.30));
     display: flex; align-items: center; justify-content: center; font-size: 22px; }
   .setting-name { font-size: 16px; font-weight: 700; }
   .setting-desc { font-size: 12.5px; color: var(--tg-hint); margin-top: 2px; }
@@ -189,6 +192,19 @@
     background: #fff; border-radius: 50%; transition: .2s; }
   .switch input:checked + .slider { background: var(--accent); border-color: var(--accent); }
   .switch input:checked + .slider:before { transform: translateX(22px); }
+
+  .snooze-dur-row { display: flex; gap: 10px; }
+  .snooze-dur-row .field { flex: 1; }
+  .snooze-dur-row .field input { text-align: center; }
+
+  /* Card snooze expansion */
+  .card .actions .snooze-opts { display: none; gap: 6px; }
+  .card.snooze-open .actions .snooze-opts { display: flex; }
+  .card.snooze-open .actions .snooze-toggle { display: none; }
+  .snooze-opts .snooze-opt { background: var(--glass-strong); color: var(--tg-text);
+    border: 1px solid var(--glass-border); border-radius: 9px; padding: 7px 12px;
+    font-size: 13px; font-weight: 600; transition: background .15s ease; }
+  .snooze-opts .snooze-opt:active { background: var(--glass); }
 
   /* Modals (bottom sheets) */
   .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 30;
@@ -246,7 +262,7 @@
   <!-- List view -->
   <div class="view show" id="list-view">
     <header>
-      <div class="brand"><div class="logo">G</div><h1>Gently Reminding Bot</h1></div>
+      <div class="brand"><div class="logo">R</div><h1>Randomly Remind Me</h1></div>
       <div class="hdr-actions">
         <button class="icon-btn" id="btn-settings" title="Settings">&#9881;&#65039;</button>
         <button class="icon-btn" id="btn-close" title="Close">&#10005;</button>
@@ -364,8 +380,12 @@
         <div class="setting-tile">
           <div class="setting-top">
             <div class="setting-emoji">&#128276;</div>
-            <div><div class="setting-name">Snooze buttons</div><div class="setting-desc">Show snooze options on reminders</div></div>
-            <div style="margin-left:auto"><label class="switch"><input type="checkbox" id="s-snooze"/><span class="slider"></span></label></div>
+            <div><div class="setting-name">Snooze durations</div><div class="setting-desc">Options shown when you tap Snooze (minutes)</div></div>
+          </div>
+          <div class="snooze-dur-row">
+            <div class="field"><label>1st</label><input id="sd1" type="number" min="1" placeholder="5"/></div>
+            <div class="field"><label>2nd</label><input id="sd2" type="number" min="1" placeholder="10"/></div>
+            <div class="field"><label>3rd</label><input id="sd3" type="number" min="1" placeholder="30"/></div>
           </div>
         </div>
       </div>

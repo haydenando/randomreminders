@@ -1,4 +1,4 @@
-"""FastAPI router for the Gently Reminding mini app.
+"""FastAPI router for the Randomly Remind Me mini app.
 
 The mini app is a static HTML/JS page served at / that talks to these
 JSON endpoints. Authentication: the mini app is opened from inside the
@@ -97,6 +97,7 @@ class UserSettingsIn(BaseModel):
     timezone: str | None = None
     hide_snooze: bool | None = None
     language: str | None = None
+    snooze_durations: list[int] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -347,6 +348,7 @@ async def get_settings(user_id: int = Depends(_user_id_from_query)):
         "hide_snooze": us.hide_snooze,
         "language": us.language,
         "default_tz": STATE.settings.default_tz,
+        "snooze_durations": us.snooze_durations,
     }
 
 
@@ -361,6 +363,11 @@ async def put_settings(body: UserSettingsIn, user_id: int = Depends(_user_id_fro
         us.hide_snooze = body.hide_snooze
     if body.language is not None:
         us.language = body.language
+    if body.snooze_durations is not None:
+        # sanitize: positive integers, up to 3, cap at 7 days
+        durs = [int(x) for x in body.snooze_durations if isinstance(x, (int, float)) and x > 0][:3]
+        if durs:
+            us.snooze_durations = [min(d, 604800) for d in durs]
     await STATE.vault.save()
     return {"ok": True}
 

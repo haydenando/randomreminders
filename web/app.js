@@ -1,4 +1,4 @@
-// Gently Reminding Bot mini app
+// Randomly Remind Me mini app
 const tg = window.Telegram?.WebApp;
 tg?.ready?.();
 tg?.expand?.();
@@ -100,12 +100,15 @@ function showView(id) {
 // List
 // ---------------------------------------------------------------------------
 let tab = "active";
+let SNOOZE_DURATIONS = [300, 600, 1800];
 
 async function loadList() {
   const main = $("#main");
   main.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>`;
   try {
     const data = await api("/reminders");
+    // keep snooze durations in sync with user settings
+    try { const s = await api("/settings"); if (s.snooze_durations && s.snooze_durations.length) SNOOZE_DURATIONS = s.snooze_durations; } catch {}
     renderTabs();
     const items = data.items.filter(r => tab === "active" ? !r.completed : r.completed);
     if (!items.length) {
@@ -114,12 +117,9 @@ async function loadList() {
     }
     main.innerHTML = items.map(renderCard).join("");
     items.forEach(r => {
-      $(`#done-${r.id}`)?.addEventListener("click", () => markDone(r.id));
       $(`#del-${r.id}`)?.addEventListener("click", () => del(r.id));
       $(`#edit-${r.id}`)?.addEventListener("click", () => openEdit(r));
-      $all(`.snooze-${r.id}`).forEach(b => {
-        b.addEventListener("click", () => snooze(r.id, parseInt(b.dataset.secs, 10)));
-      });
+      $(`#snooze-${r.id}`)?.addEventListener("click", () => toggleSnooze(r.id));
     });
   } catch (e) {
     main.innerHTML = `<div class="empty">Error: ${escapeHtml(e.message)}</div>`;
@@ -153,9 +153,8 @@ function renderCard(r) {
   const tags = (r.tags && r.tags.length)
     ? `<div class="tag-holder">${r.tags.map(t => `<span class="tag-chip">#${escapeHtml(t)}</span>`).join("")}</div>`
     : "";
-  const snoozeBtns = (r.kind !== "countdown" && !r.completed)
-    ? [60, 300, 900, 3600].map(s => `<button class="snooze snooze-${r.id}" data-secs="${s}">+${s < 3600 ? s/60 + "m" : s/3600 + "h"}</button>`).join("")
-    : "";
+
+
   const imgTag = r.image_id ? " \u{1F5BC}" : "";
   return `
     <div class="card" data-id="${r.id}">
@@ -173,11 +172,11 @@ function renderCard(r) {
         </div>
       </div>
       <div class="actions">
-        ${r.completed ? "" : `<button class="done" id="done-${r.id}">\u2705 Done</button>`}
-        ${snoozeBtns}
-        <span class="spacer"></span>
-        <button id="edit-${r.id}">Edit</button>
         <button class="danger" id="del-${r.id}">Delete</button>
+        <button id="edit-${r.id}">Edit</button>
+        <span class="spacer"></span>
+        <button class="snooze-toggle" id="snooze-${r.id}">Snooze</button>
+        <div class="snooze-opts" data-snooze="${r.id}"></div>
       </div>
     </div>
   `;
@@ -191,6 +190,19 @@ async function del(rid) {
   if (!confirm("Delete this reminder?")) return;
   try { await api(`/reminders/${rid}`, { method: "DELETE" }); toast("Deleted"); loadList(); }
   catch (e) { toast(e.message, "err"); }
+}
+
+function toggleSnooze(rid) {
+  const card = document.querySelector(`[data-id="${rid}"]`);
+  if (!card) return;
+  const opts = card.querySelector(`[data-snooze="${rid}"]`);
+  if (card.classList.contains("snooze-open")) {
+    card.classList.remove("snooze-open");
+    return;
+  }
+  opts.innerHTML = SNOOZE_DURATIONS.map(s => `<button class="snooze-opt snooze-${rid}" data-secs="${s}">${fmtDur(s)}</button>`).join("");
+  opts.querySelectorAll(".snooze-opt").forEach(b => b.addEventListener("click", () => snooze(rid, parseInt(b.dataset.secs, 10))));
+  card.classList.add("snooze-open");
 }
 async function snooze(rid, secs) {
   try { await api(`/reminders/${rid}/snooze?seconds=${secs}`, { method: "POST" }); toast(`Snoozed +${secs}s`); loadList(); }
@@ -588,15 +600,19 @@ async function openSettings() {
     const s = await api("/settings");
     const cur = s.timezone || s.default_tz || "UTC";
     populateTimezones($("#s-tz"), cur);
-    $("#s-snooze").checked = !!s.hide_snooze;
+    const durs = (s.snooze_durations && s.snooze_durations.length) ? s.snooze_durations : [300, 600, 1800];
+    $("#sd1").value = Math.round(durs[0] / 60);
+    $("#sd2").value = Math.round(durs[1] / 60);
+    $("#sd3").value = Math.round(durs[2] / 60);
     showView("#settings-view");
   } catch (e) { toast(e.message, "err"); }
 }
 async function saveSettings() {
   const tz = $("#s-tz").value || null;
-  const hide_snooze = $("#s-snooze").checked;
+  const durs = ["sd1", "sd2", "sd3"].map(id => Math.max(1, parseInt($("#"+id).value || "0", 10)) * 60).filter(v => v > 0);
   try {
-    await api("/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ timezone: tz, hide_snooze }) });
+    await api("/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ timezone: tz, snooze_durations: durs }) });
+    SNOOZE_DURATIONS = durs.length ? durs : [300, 600, 1800];
     toast("Settings saved");
     showView("#list-view");
     loadList();

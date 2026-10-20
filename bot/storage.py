@@ -43,6 +43,8 @@ class UserState:
     language: str | None = None
     chat_language: str | None = None
     onboarded: bool = False
+    # Snooze durations in seconds (default 5m, 10m, 30m)
+    snooze_durations: list[int] = field(default_factory=lambda: [300, 600, 1800])
 
 
 @dataclass
