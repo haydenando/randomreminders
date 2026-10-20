@@ -63,7 +63,10 @@ async def send_reminder(user_id: int, r) -> None:
             # legacy reminders created before image uploads used raw file_ids
             await bot.send_photo(user_id, r.image_file_id, caption=text)
         elif image_data is not None:
-            await bot.send_photo(user_id, image_data, caption=text)
+            if r.media_type == "document":
+                await bot.send_document(user_id, image_data, filename=r.filename or "file", caption=text)
+            else:
+                await bot.send_photo(user_id, image_data, caption=text)
         else:
             await bot.send_message(user_id, text)
     except Exception:  # noqa: BLE001

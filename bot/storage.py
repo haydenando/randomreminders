@@ -32,7 +32,8 @@ log = logging.getLogger(__name__)
 MARKER = "<<<RRv1>>>"
 SCHEMA_VERSION = 1
 
-MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB per image
+MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB per image (kept for legacy)
+MAX_FILE_BYTES = 20 * 1024 * 1024  # 20 MB per uploaded file (Bot API document limit)
 
 
 @dataclass
@@ -54,6 +55,8 @@ class DB:
     seq: int = 0
     # image_id -> vault-bot file_id of the image backup document
     image_refs: dict[str, str] = field(default_factory=dict)
+    # image_id -> {"filename": str, "media_type": "photo" | "document"}
+    image_meta: dict[str, dict] = field(default_factory=dict)
 
     def user(self, user_id: int) -> UserState:
         if user_id not in self.users:
@@ -76,6 +79,7 @@ class DB:
                 "users": {str(k): v.__dict__ for k, v in self.users.items()},
                 "reminders": [r.to_dict() for r in self.reminders.values()],
                 "image_refs": self.image_refs,
+                "image_meta": self.image_meta,
             },
             separators=(",", ":"),
         )
@@ -86,6 +90,7 @@ class DB:
         db = cls()
         db.seq = int(data.get("seq", 0))
         db.image_refs = dict(data.get("image_refs") or {})
+        db.image_meta = dict(data.get("image_meta") or {})
         for uid, udata in (data.get("users") or {}).items():
             db.users[int(uid)] = UserState(
                 **{
@@ -189,17 +194,18 @@ class Vault:
     # bot's file_id for that document is stored in the vault JSON, so images
     # survive restarts; on a cache miss we re-download via the vault bot.
 
-    async def put_image(self, data: bytes) -> str:
-        """Store image bytes; return the new image_id."""
-        if len(data) > MAX_IMAGE_BYTES:
-            raise ValueError(f"image too large (max {MAX_IMAGE_BYTES // (1024*1024)} MB)")
+    async def put_image(self, data: bytes, filename: str = "file", media_type: str = "photo") -> str:
+        """Store file bytes; return the new image_id."""
+        if len(data) > MAX_FILE_BYTES:
+            raise ValueError(f"file too large (max {MAX_FILE_BYTES // (1024*1024)} MB)")
         image_id = self.db.next_image_id()
         msg = await self._vault_bot.send_document(
             self.settings.vault_chat_id,
             document=data,
-            filename=f"{image_id}.img",
+            filename=f"{image_id}_{filename}",
         )
         self.db.image_refs[image_id] = msg.document.file_id
+        self.db.image_meta[image_id] = {"filename": filename, "media_type": media_type}
         self._images[image_id] = data
         await self.save()
         return image_id
@@ -226,6 +232,11 @@ class Vault:
         if not image_id:
             return False
         return image_id in self._images or image_id in self.db.image_refs
+
+    def get_image_meta(self, image_id: str | None) -> dict:
+        if not image_id:
+            return {}
+        return self.db.image_meta.get(image_id) or {}
 
     async def delete_image(self, image_id: str | None) -> None:
         """Drop an image if no other reminder still references it."""

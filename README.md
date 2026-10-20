@@ -21,10 +21,12 @@ A personal Telegram reminder bot with a Flexible Reminder mini app and a killer 
 - **Two reminder modes**: Regular and Countdown (count down to a target date/time,
   optionally starting N days in advance).
 - **Customizable message text** per reminder (`{text}`, `{id}`, `{next}` placeholders).
-- **Optional image** per reminder, uploaded from the mini app (no links/file
-  ids). Bytes are cached in memory and backed up in the vault chat by the
-  vault bot, so images survive restarts.
-- **Buttonless reminders**: reminders arrive as plain text (or photo + caption)
+- **Optional attachment** (any file type, up to 20 MB) per reminder, uploaded from the mini
+  app. Bytes are backed up in the vault chat by the vault bot, so they survive
+  restarts. Images are sent as photos, all other files as documents with a caption.
+- **Reminder text limits**: 4096 characters for text-only reminders, 1024 characters
+  when an attachment is attached.
+- **Buttonless reminders**: reminders arrive as plain text (or media + caption)
   with no inline buttons. Done / delete / snooze live in the mini app.
 - **Chat commands** + a **mini app** (Flexible Reminder) for full editing.
 

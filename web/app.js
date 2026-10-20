@@ -247,6 +247,7 @@ async function openCreate() {
     mode: "regular", id: null, text: "", note: "", message_template: "",
     image_id: null, tz, tags: [], schedules: [],
     target_date: "", notification_time: "09:00", countdown_days_before: 0,
+    media_type: "photo", filename: null,
   };
   $("#form-head-title").textContent = "Create Reminder";
   resetFormUI();
@@ -261,6 +262,7 @@ function openEdit(r) {
     schedules: (r.schedules && r.schedules.length) ? r.schedules.map(s => pickSched(s)) : [pickSched(r)],
     target_date: r.target_date || "", notification_time: r.notification_time || "09:00",
     countdown_days_before: r.countdown_days_before || 0,
+    media_type: r.media_type || "photo", filename: r.filename || null,
   };
   $("#form-head-title").textContent = `Edit #${r.id}`;
   resetFormUI();
@@ -291,8 +293,18 @@ function resetFormUI() {
   switchMode(formState.mode);
   renderTags();
   renderScheduleList();
-  resetImageUI(formState.image_id);
-  if (formState.image_id) showImagePreview(`${API}/images/${formState.image_id}?user_id=${encodeURIComponent(USER_ID)}`);
+  previewAttachment(formState.image_id, formState.filename, formState.media_type);
+}
+
+function previewAttachment(imageId, filename, mediaType) {
+  if (!imageId) { resetImageUI(null); return; }
+  resetImageUI(imageId);
+  if (mediaType === "document") {
+    $("#img-preview").style.display = "none";
+    $("#img-error").textContent = "📎 " + (filename || "file");
+  } else {
+    showImagePreview(`${API}/images/${imageId}?user_id=${encodeURIComponent(USER_ID)}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -617,23 +629,32 @@ function resetImageUI(imageId) {
   $("#img-preview").style.display = "none";
   if (imgObjectUrl) { URL.revokeObjectURL(imgObjectUrl); imgObjectUrl = null; }
 }
-function showImagePreview(src) {
+function showImagePreview(src, filename) {
   const box = $("#img-preview");
-  $("#img-preview-img").src = src;
+  const img = $("#img-preview-img");
+  if (img) img.style.display = "block";
+  if (img) img.src = src;
   box.style.display = "block";
 }
 async function onImagePicked(file) {
   $("#img-error").textContent = "";
   if (!file) return;
-  if (file.size > 5 * 1024 * 1024) { $("#img-error").textContent = "Image is larger than 5 MB"; return; }
-  imgObjectUrl = URL.createObjectURL(file);
-  showImagePreview(imgObjectUrl);
+  if (file.size > 20 * 1024 * 1024) { $("#img-error").textContent = "File is larger than 20 MB"; return; }
+  const isImage = (file.type || "").startsWith("image/");
+  if (isImage) {
+    imgObjectUrl = URL.createObjectURL(file);
+    showImagePreview(imgObjectUrl, file.name);
+  } else {
+    $("#img-preview").style.display = "none";
+    $("#img-error").textContent = "📎 " + (file.name || "file");
+  }
   try {
     const fd = new FormData();
     fd.append("file", file);
     const res = await api("/images", { method: "POST", body: fd });
     formState.image_id = res.image_id;
-    toast("Image uploaded");
+    formState.fileName = res.filename || file.name;
+    toast("File uploaded");
   } catch (e) {
     $("#img-error").textContent = e.message;
     formState.image_id = null;
@@ -654,6 +675,12 @@ async function saveForm() {
   formState.tz = (formState.mode === "countdown" ? $("#c-tz") : $("#f-tz")).value;
 
   if (!formState.text) { toast("Enter a reminder text", "err"); return; }
+  const hasMedia = !!(formState.image_id || formState.image_file_id);
+  const maxText = hasMedia ? 1024 : 4096;
+  if (formState.text.length > maxText) {
+    toast(`Reminder text is limited to ${maxText} characters` + (hasMedia ? " when media is attached" : ""), "err");
+    return;
+  }
 
   let body;
   if (formState.mode === "countdown") {

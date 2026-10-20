@@ -18,13 +18,13 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from telegram.ext import Application
 
 from .config import Reminder, Settings, utcnow
 from .handlers import _fmt_next, _render_reminder_line
 from .scheduler import ReminderScheduler, compute_next_fire
-from .storage import MAX_IMAGE_BYTES, Vault
+from .storage import MAX_FILE_BYTES, MAX_IMAGE_BYTES, Vault
 
 router = APIRouter(prefix="/api")
 
@@ -72,7 +72,7 @@ class ScheduleIn(BaseModel):
 
 
 class ReminderIn(BaseModel):
-    text: str = Field(min_length=1, max_length=500)
+    text: str = Field(min_length=1, max_length=4096)
     kind: str = "reminder"  # reminder | countdown
     tz: str = "UTC"
     image_id: str | None = None
@@ -105,6 +105,17 @@ class ReminderIn(BaseModel):
     window_start: str | None = None
     window_end: str | None = None
     cron_expr: str | None = None
+
+    @model_validator(mode="after")
+    def _enforce_text_limits(self):
+        has_media = bool(self.image_id or self.image_file_id)
+        limit = 1024 if has_media else 4096
+        if self.text and len(self.text) > limit:
+            raise ValueError(
+                f"Reminder text is limited to {limit} characters "
+                + ("when media is attached" if has_media else "for text-only reminders")
+            )
+        return self
 
 
 class UserSettingsIn(BaseModel):
@@ -254,6 +265,8 @@ def _build_reminder(schema: dict, user_id: int, body: ReminderIn, gid: int) -> R
         tz=body.tz or us_tz(user_id),
         image_id=body.image_id,
         image_file_id=body.image_file_id,
+        media_type=(STATE.vault.db.image_meta.get(body.image_id) or {}).get("media_type", "photo") if body.image_id else "photo",
+        filename=(STATE.vault.db.image_meta.get(body.image_id) or {}).get("filename") if body.image_id else None,
         message_template=body.message_template,
         note=body.note,
         tags=body.tags,
@@ -405,21 +418,23 @@ async def put_settings(body: UserSettingsIn, user_id: int = Depends(_user_id_fro
 # ---------------------------------------------------------------------------
 
 @router.post("/images", status_code=201)
-async def upload_image(file: UploadFile = File(...), user_id: int = Depends(_user_id_from_query)):
+async def upload_file(file: UploadFile = File(...), user_id: int = Depends(_user_id_from_query)):
     if STATE.vault is None:
         raise HTTPException(503, "not ready")
     if not STATE.vault.db.user(user_id).verified:
         raise HTTPException(401, "not verified")
-    if (file.content_type or "") not in ("image/jpeg", "image/png", "image/webp"):
-        raise HTTPException(415, "only JPEG, PNG or WebP images are supported")
     data = await file.read()
-    if len(data) > MAX_IMAGE_BYTES:
-        raise HTTPException(413, "image too large (max 5 MB)")
+    if len(data) > MAX_FILE_BYTES:
+        raise HTTPException(413, f"file too large (max {MAX_FILE_BYTES // (1024*1024)} MB)")
+    ct = (file.content_type or "").lower()
+    media_type = "photo" if ct.startswith("image/") else "document"
+    filename = file.filename or ("image" if media_type == "photo" else "file")
     try:
-        image_id = await STATE.vault.put_image(data)
+        image_id = await STATE.vault.put_image(data, filename, media_type)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(500, f"could not store image: {exc}")
-    return {"image_id": image_id, "url": f"/api/images/{image_id}"}
+        raise HTTPException(500, f"could not store file: {exc}")
+    return {"image_id": image_id, "url": f"/api/images/{image_id}",
+            "media_type": media_type, "filename": filename}
 
 
 @router.get("/images/{image_id}")
