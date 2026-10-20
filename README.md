@@ -12,9 +12,8 @@ A personal Telegram reminder bot with a Skeddy-style mini app and a killer featu
 
 - **Secret-phrase gated**: public bot, but only works if you type the phrase
   (`haydenando` by default). After that you get a Skeddy-style onboarding:
-  a choice between "Open Mini App" and "Set up in chat" (time zone,
-  language, chat language).
-- **Randomized intervals**: `every 10-20m stretch` fires every 10 to 20 minutes,
+  a choice between "Open Mini App" and "Set up in chat" (time zone).
+- **Randomized intervals**: `every 10-20m stretch` fires indefinitely every 10 to 20 minutes,
   re-rolling the random gap each time.
 - **Six schedule types**: specific time, every day, interval, days of the week,
   days of the month, date range.
@@ -33,14 +32,15 @@ A personal Telegram reminder bot with a Skeddy-style mini app and a killer featu
 | Command | Description |
 |---|---|
 | `/start` | start using the bot or return to the main menu |
-| `/list` | show your reminders |
+| `/list` | show active reminders |
+| `/delete` | delete a reminder (`/delete <id>`) |
 | `/help` | open Help |
 | `/formats` | view supported date and time formats |
 | `/help_reminder_types` | the difference between reminders and tasks |
 | `/help_schedules` | what the icons next to a reminder's times mean |
 | `/cancel` | cancel the current action |
 | `/miniapp` | open the app to create/manage reminders |
-| `/settings` | open the settings (timezone, snooze, language) |
+| `/settings` | open settings (timezone, snooze) |
 
 ## Time formats
 

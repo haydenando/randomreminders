@@ -122,7 +122,10 @@ def _next_in_range(
 
 def compute_next_fire(r: Reminder, from_dt: datetime) -> datetime | None:
     """Compute the next fire time for a reminder, given the current time."""
-    if r.completed:
+    # Interval schedules run indefinitely and are never auto-completed
+    if r.schedule_type == "interval":
+        r.completed = False
+    elif r.completed:
         return None
     tod = _parse_hhmm(r.time_of_day)
     if r.schedule_type == "once":
@@ -240,6 +243,11 @@ class ReminderScheduler:
                 self.sched.remove_job(self._job_id(rid))
             except Exception:  # noqa: BLE001
                 pass
+            if r.image_id:
+                try:
+                    await self.vault.delete_image(r.image_id)
+                except Exception:  # noqa: BLE001
+                    pass
             await self.vault.save()
         return r
 

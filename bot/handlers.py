@@ -2,7 +2,7 @@
 
 All commands go through the secret-phrase gate on first use. Once verified,
 the user gets a Skeddy-style onboarding (mini app button or chat setup with
-timezone / language), then creates reminders by just chatting.
+timezone), then creates reminders by just chatting.
 
 Reminders are delivered as plain text (or photo+caption) messages with NO
 inline buttons — completion, deletion and snoozing happen in the mini app.
@@ -10,13 +10,14 @@ inline buttons — completion, deletion and snoozing happen in the mini app.
 Commands:
   /start               - onboarding / return to the main menu
   /list                - show reminders
+  /delete <id>         - delete a reminder
   /help                - open help
   /formats             - supported time formats
   /help_reminder_types - difference between reminder / task / task_no_notify
   /help_schedules      - what the schedule icons mean
   /cancel              - cancel the current inline action
   /miniapp             - open the Skeddy-style mini app
-  /settings            - open settings (timezone, snooze, language)
+  /settings            - open settings (timezone, snooze)
 """
 from __future__ import annotations
 
@@ -52,12 +53,6 @@ COMMON_TIMEZONES = [
     "Asia/Singapore", "Asia/Hong_Kong", "Asia/Seoul", "Asia/Tokyo",
     "Australia/Sydney", "Pacific/Auckland", "UTC",
 ]
-
-# Languages offered during onboarding / settings.
-LANGUAGES = ["English", "Nederlands", "Français", "Deutsch", "Español"]
-
-# Chat-language options (informal wording of bot messages).
-CHAT_LANGUAGES = ["English informal", "English formal"]
 
 
 # ---------------------------------------------------------------------------
@@ -195,36 +190,13 @@ def _tz_keyboard(prefix: str = "tz") -> InlineKeyboardMarkup:
 
 
 def _setup_chat_panel() -> tuple[str, InlineKeyboardMarkup]:
-    """The 'Set up in chat' screen: time zone -> language -> chat language."""
+    """The 'Set up in chat' screen: time zone selection."""
     text = (
         "➡️ Select time zone\n"
         "This is the time zone I'll use to remind you.\n"
-        "It can be changed later."
+        "It can be changed later in /settings."
     )
     return text, _tz_keyboard("tz")
-
-
-def _language_panel() -> tuple[str, InlineKeyboardMarkup]:
-    rows = []
-    row = []
-    for lang in LANGUAGES:
-        row.append(InlineKeyboardButton(lang, callback_data=f"lang:{lang}"))
-        if len(row) == 2:
-            rows.append(row)
-            row = []
-    if row:
-        rows.append(row)
-    text = "🌐 Language\nPlease select the language you'd like me to use."
-    return text, InlineKeyboardMarkup(rows)
-
-
-def _chat_language_panel() -> tuple[str, InlineKeyboardMarkup]:
-    rows = [
-        [InlineKeyboardButton(label, callback_data=f"chatlang:{label}")]
-        for label in CHAT_LANGUAGES
-    ]
-    text = "🗣 Chat language\nHow formal should I be when chatting with you?"
-    return text, InlineKeyboardMarkup(rows)
 
 
 async def _finish_onboarding(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -235,9 +207,7 @@ async def _finish_onboarding(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
     tzname = us.timezone or settings(ctx).default_tz
     text = (
         f"All set ✅\n\n"
-        f"⏰ Time zone: {tzname}\n"
-        f"🌐 Language: {us.language or 'English'}\n"
-        f"🗣 Chat language: {us.chat_language or 'English informal'}\n\n"
+        f"⏰ Time zone: {tzname}\n\n"
         "Now tell me what you want to be reminded about, e.g.\n"
         "<code>every 10-20m stretch</code>\n"
         "or open the mini app for the full editor."
@@ -286,20 +256,38 @@ async def cmd_list(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     us = user_state(ctx, update)
     tzname = us.timezone or settings(ctx).default_tz
     reminders = [
-        r for r in vault(ctx).db.reminders.values() if r.user_id == update.effective_user.id
+        r for r in vault(ctx).db.reminders.values()
+        if r.user_id == update.effective_user.id and not r.completed
     ]
     if not reminders:
         await update.effective_message.reply_text(
-            "No reminders yet. Create one via chat or the mini app."
+            "No active reminders. Create one via chat or the mini app."
         )
         return
     reminders.sort(key=lambda r: r.next_fire or "9999")
-    lines = [f"📋 Your reminders ({len(reminders)}):", ""]
+    lines = [f"📋 Your active reminders ({len(reminders)}):", ""]
     for r in reminders:
         lines.append(_render_reminder_line(r, tzname))
         lines.append("")
-    lines.append("Manage or complete them in the mini app.")
+    lines.append("To delete: /delete <id> or use the mini app.")
     await update.effective_message.reply_text("\n".join(lines))
+
+
+async def cmd_delete(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """/delete <id> — delete a reminder in real time."""
+    if not await verify_gate(ctx, update):
+        return
+    args = ctx.args or []
+    if not args or not args[0].lstrip("#").isdigit():
+        await update.effective_message.reply_text("Usage: <code>/delete &lt;id&gt;</code> (e.g. <code>/delete 1</code>)", parse_mode="HTML")
+        return
+    rid = int(args[0].lstrip("#"))
+    r = vault(ctx).db.reminders.get(rid)
+    if r is None or r.user_id != update.effective_user.id:
+        await update.effective_message.reply_text(f"❌ Reminder #{rid} not found.")
+        return
+    await sched(ctx).remove(rid)
+    await update.effective_message.reply_text(f"🗑 Deleted reminder #{rid}: {r.text}")
 
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -311,6 +299,7 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "Commands\n"
         "/start — main menu\n"
         "/list — your reminders\n"
+        "/delete <id> — delete a reminder\n"
         "/formats — supported time formats\n"
         "/help_reminder_types — reminder vs task\n"
         "/help_schedules — schedule icons\n"
@@ -424,12 +413,6 @@ async def cmd_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             InlineKeyboardButton("➡️ Time zone", callback_data="set:tz"),
         ],
         [
-            InlineKeyboardButton("🌐 Language", callback_data="set:lang"),
-        ],
-        [
-            InlineKeyboardButton("🗣 Chat language", callback_data="set:chatlang"),
-        ],
-        [
             InlineKeyboardButton(
                 f"Snooze buttons: {'hidden' if us.hide_snooze else 'visible'}",
                 callback_data="set:snooze",
@@ -444,8 +427,7 @@ async def cmd_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await update.effective_message.reply_text(
         f"Settings\n\n"
         f"⏰ Time zone: <b>{tzname}</b>\n"
-        f"🌐 Language: <b>{us.language or 'English'}</b>\n"
-        f"🗣 Chat language: <b>{us.chat_language or 'English informal'}</b>",
+        f"🔔 Snooze buttons: <b>{'hidden' if us.hide_snooze else 'visible'}</b>",
         parse_mode="HTML",
         reply_markup=kb,
     )
@@ -478,44 +460,15 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         us.timezone = name
         ctx.user_data["awaiting_tz"] = False
         await vault(ctx).save()
-        # move on to the language step during onboarding
-        text, kb = _language_panel()
         await q.message.reply_text(
             f"✅ Time zone set to <b>{name}</b>.", parse_mode="HTML"
         )
-        await q.message.reply_text(text, reply_markup=kb)
+        if not us.onboarded:
+            await _finish_onboarding(update, ctx)
         return
 
     if data.startswith("set:tz"):
         text, kb = _setup_chat_panel()
-        await q.message.reply_text(text, reply_markup=kb)
-        return
-
-    if data.startswith("lang:"):
-        lang = data.split(":", 1)[1]
-        us.language = lang
-        await vault(ctx).save()
-        text, kb = _chat_language_panel()
-        await q.message.reply_text(
-            f"✅ Language set to <b>{lang}</b>.", parse_mode="HTML"
-        )
-        await q.message.reply_text(text, reply_markup=kb)
-        return
-
-    if data.startswith("set:lang"):
-        text, kb = _language_panel()
-        await q.message.reply_text(text, reply_markup=kb)
-        return
-
-    if data.startswith("chatlang:"):
-        chat_lang = data.split(":", 1)[1]
-        us.chat_language = chat_lang
-        await vault(ctx).save()
-        await _finish_onboarding(update, ctx)
-        return
-
-    if data.startswith("set:chatlang"):
-        text, kb = _chat_language_panel()
         await q.message.reply_text(text, reply_markup=kb)
         return
 
@@ -560,30 +513,16 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     text = (msg.text or "").strip()
     us = user_state(ctx, update)
 
-    # 0. gate: unverified users must send the secret phrase first
+    # 0. gate: unverified users must verify with the secret phrase
     if not us.verified:
-        ctx.user_data["awaiting_phrase"] = True
-        await verify_gate(ctx, update)
-        return
-
-    # 1. secret phrase verification
-    us = user_state(ctx, update)
-
-    # 1. secret phrase verification
-    if ctx.user_data.get("awaiting_phrase") and not us.verified:
         if text.lower() == settings(ctx).secret_phrase.lower():
             us.verified = True
             ctx.user_data["awaiting_phrase"] = False
-            # prefill language from Telegram's own locale
-            if not us.language and update.effective_user and update.effective_user.language_code:
-                code = update.effective_user.language_code.split("-")[0]
-                names = {"en": "English", "nl": "Nederlands", "fr": "Français",
-                         "de": "Deutsch", "es": "Español"}
-                us.language = names.get(code, "English")
             await vault(ctx).save()
             await _send_welcome(update, ctx)
         else:
-            await msg.reply_text("❌ Wrong phrase. Try again, or /start to reset.")
+            ctx.user_data["awaiting_phrase"] = True
+            await verify_gate(ctx, update)
         return
 
     # 2. timezone setting (from the 'type another time zone' button)
@@ -599,8 +538,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await vault(ctx).save()
         await msg.reply_text(f"✅ Time zone set to {text}.")
         if not us.onboarded:
-            panel_text, kb = _language_panel()
-            await msg.reply_text(panel_text, reply_markup=kb)
+            await _finish_onboarding(update, ctx)
         return
 
     # 3. natural-language-ish reminder creation
@@ -727,6 +665,7 @@ def _try_parse_create(text: str) -> Reminder | None:
 BOT_COMMANDS = [
     BotCommand("start", "start using the bot or return to the main menu"),
     BotCommand("list", "show your reminders"),
+    BotCommand("delete", "delete a reminder (e.g. /delete 1)"),
     BotCommand("help", "open Help"),
     BotCommand("formats", "view supported date and time formats"),
     BotCommand("help_reminder_types", "the difference between reminders and tasks"),
@@ -740,6 +679,7 @@ BOT_COMMANDS = [
 def register_handlers(application) -> None:
     application.add_handler(CommandHandler("start", cmd_start))
     application.add_handler(CommandHandler("list", cmd_list))
+    application.add_handler(CommandHandler("delete", cmd_delete))
     application.add_handler(CommandHandler("help", cmd_help))
     application.add_handler(CommandHandler("formats", cmd_formats))
     application.add_handler(CommandHandler("help_reminder_types", cmd_help_reminder_types))

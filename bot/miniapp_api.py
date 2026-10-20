@@ -202,10 +202,15 @@ async def mark_done(rid: int, user_id: int = Depends(_user_id_from_query)):
     r = STATE.vault.db.reminders.get(rid)
     if r is None or r.user_id != user_id:
         raise HTTPException(404, "not found")
-    r.completed = True
-    if r.kind == "task":
+    if r.schedule_type == "interval":
+        # Intervals run indefinitely; "done" acknowledges the ping and rolls next interval
+        r.completed = False
+        await STATE.sched.reschedule(rid)
+    elif r.kind == "task":
+        r.completed = True
         await STATE.sched.remove(rid)
     else:
+        r.completed = True
         await STATE.sched.reschedule(rid)
     return {"ok": True}
 
